@@ -3,7 +3,6 @@ package main
 import (
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"time"
 
@@ -14,12 +13,8 @@ func main() {
 	baseLogger := logrus.New()
 	baseLogger.SetOutput(os.Stdout)
 	logger := baseLogger.WithField("service", "bram-html")
-	dataDir := envOr("DATA_DIR", "data")
-	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		logger.Fatal(err)
-	}
 
-	dbFile := filepath.Join(dataDir, "bram-html.db")
+	dbFile := envOr("DB_FILE", "bram-html.db")
 	logger.Infof("using database file %s", dbFile)
 	store, err := NewStore(dbFile)
 	if err != nil {
