@@ -1,0 +1,6 @@
+data/
+.env
+bram-html
+*.db
+*.db-shm
+*.db-wal

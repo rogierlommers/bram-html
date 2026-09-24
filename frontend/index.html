@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="bram-html is a friendly HTML and CSS playground for young learners." />
+    <title>bram-html</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Nunito:wght@500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="bram-html home">
+        <span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>
+        <span class="brand-name">bram-html</span>
+      </a>
+      <div class="account-actions">
+        <span class="user-email" id="user-email" hidden></span>
+        <button class="header-button" id="pages-button" type="button" hidden>My pages</button>
+        <button class="header-button primary" id="auth-button" type="button">Sign in</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">LEARN BY MAKING</p>
+          <h1 id="page-title">What will you build today?</h1>
+          <p class="intro-description">Edit the code, then watch your creation come alive instantly.</p>
+        </div>
+        <div class="intro-actions">
+          <button class="save-button" id="save-button" type="button">Save page</button>
+          <button class="surprise-button" id="surprise-button" type="button">
+            <span aria-hidden="true">✦</span> Surprise me
+          </button>
+        </div>
+      </section>
+
+      <section class="lesson-strip" aria-label="Quick lessons">
+        <button class="lesson active" type="button" data-lesson="welcome">
+          <span class="lesson-number">01</span>
+          <span><strong>Say hello</strong><small>Headings &amp; text</small></span>
+        </button>
+        <button class="lesson" type="button" data-lesson="colors">
+          <span class="lesson-number">02</span>
+          <span><strong>Play with color</strong><small>CSS styles</small></span>
+        </button>
+        <button class="lesson" type="button" data-lesson="card">
+          <span class="lesson-number">03</span>
+          <span><strong>Build a card</strong><small>Boxes &amp; spacing</small></span>
+        </button>
+      </section>
+
+      <section class="workspace" aria-label="Coding playground">
+        <div class="panel code-panel">
+          <div class="panel-header">
+            <div>
+              <span class="status-dot coral" aria-hidden="true"></span>
+              <h2>Page name</h2>
+            </div>
+            <label class="page-title-label">
+              <span class="sr-only">Page title</span>
+              <input id="page-title-input" maxlength="100" value="My first page" />
+            </label>
+            <button class="text-button" id="reset-button" type="button">↻ Reset</button>
+          </div>
+          <div class="editor-wrap">
+            <label class="sr-only" for="code-editor">HTML and CSS code</label>
+            <textarea id="code-editor" spellcheck="false" autocapitalize="off" aria-describedby="editor-tip"></textarea>
+          </div>
+          <p class="panel-tip" id="editor-tip"><span aria-hidden="true">💡</span> Try changing a color. Press Esc, then Tab, to leave the editor.</p>
+        </div>
+
+        <div class="panel preview-panel">
+          <div class="panel-header">
+            <div>
+              <span class="status-dot green" aria-hidden="true"></span>
+              <h2>Live preview</h2>
+            </div>
+            <span class="live-label">LIVE</span>
+          </div>
+          <iframe id="preview" title="Live preview of your code" sandbox="allow-modals"></iframe>
+          <p class="panel-tip"><span aria-hidden="true">✨</span> Every change you make appears here.</p>
+        </div>
+      </section>
+    </main>
+
+    <dialog class="modal" id="auth-dialog" aria-labelledby="auth-title">
+      <form class="modal-card" id="auth-form">
+        <button class="modal-close" type="button" data-close="auth-dialog" aria-label="Close">×</button>
+        <p class="eyebrow">SAVE YOUR CREATIONS</p>
+        <h2 id="auth-title">Sign in to bram-html</h2>
+        <p>Enter an email address. We’ll send a safe, one-time sign-in link—no password needed.</p>
+        <label class="field-label" for="email-input">Email address</label>
+        <input class="field-input" id="email-input" name="email" type="email" autocomplete="email" required />
+        <button class="modal-action" type="submit">Email my sign-in link</button>
+        <p class="form-message" id="auth-message" role="status"></p>
+      </form>
+    </dialog>
+
+    <dialog class="modal pages-modal" id="pages-dialog" aria-labelledby="pages-title">
+      <div class="modal-card">
+        <button class="modal-close" type="button" data-close="pages-dialog" aria-label="Close">×</button>
+        <p class="eyebrow">YOUR COLLECTION</p>
+        <h2 id="pages-title">Saved pages</h2>
+        <div class="saved-pages" id="saved-pages"></div>
+        <p class="form-message" id="pages-message" role="status"></p>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <footer>
+      <p>bram-html · Made for curious minds <span aria-hidden="true">♥</span></p>
+      <p>HTML builds it. CSS makes it shine.</p>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
+</html>

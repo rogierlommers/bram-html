@@ -1,0 +1,80 @@
+package main
+
+import (
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"time"
+)
+
+func main() {
+	logger := log.New(os.Stdout, "bram-html: ", log.LstdFlags)
+	dataDir := envOr("DATA_DIR", "data")
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		logger.Fatal(err)
+	}
+
+	store, err := NewStore(filepath.Join(dataDir, "bram-html.db"))
+	if err != nil {
+		logger.Fatal(err)
+	}
+	defer store.Close()
+
+	mailer := configuredMailer(logger)
+	baseURL := envOr("BASE_URL", "http://localhost:8080")
+	app, err := NewApp(store, mailer, Config{
+		BaseURL:          baseURL,
+		LoginPerIPLimit:  envInt("AUTH_RATE_LIMIT_PER_IP", 0),
+		LoginGlobalLimit: envInt("AUTH_RATE_LIMIT_GLOBAL", 0),
+		StaticDir:        envOr("STATIC_DIR", "frontend"),
+	})
+	if err != nil {
+		logger.Fatal(err)
+	}
+	server := &http.Server{
+		Addr:              envOr("ADDR", ":8080"),
+		Handler:           app.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	logger.Printf("listening on %s (%s)", server.Addr, baseURL)
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Fatal(err)
+	}
+}
+
+func configuredMailer(logger *log.Logger) Mailer {
+	host := os.Getenv("SMTP_HOST")
+	if host == "" {
+		logger.Print("SMTP is not configured; magic links will be printed here")
+		return LogMailer{Logger: logger}
+	}
+	return SMTPMailer{
+		Host: host, Port: envOr("SMTP_PORT", "587"), Username: os.Getenv("SMTP_USERNAME"),
+		Password: os.Getenv("SMTP_PASSWORD"), From: envOr("SMTP_FROM", "bram-html@example.com"),
+	}
+}
+
+func envOr(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func envInt(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < -1 {
+		return fallback
+	}
+	return parsed
+}
