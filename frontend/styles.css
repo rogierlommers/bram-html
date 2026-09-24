@@ -124,18 +124,6 @@ h1 {
   font-size: 1.02rem;
 }
 
-.surprise-button {
-  flex: none;
-  padding: 12px 18px;
-  border: 2px solid var(--ink);
-  border-radius: 12px;
-  background: var(--yellow);
-  box-shadow: 3px 3px 0 var(--ink);
-  cursor: pointer;
-  font-weight: 800;
-  transition: transform 120ms ease, box-shadow 120ms ease;
-}
-
 .intro-actions { display: flex; gap: 10px; }
 
 .save-button {
@@ -149,12 +137,9 @@ h1 {
   font-weight: 800;
 }
 
-.surprise-button:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--ink); }
-.surprise-button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
-
 .lesson-strip {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
   margin-bottom: 16px;
 }

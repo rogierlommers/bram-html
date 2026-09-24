@@ -8,7 +8,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/bram-html .
 
 FROM alpine:3.22
 
-RUN addgroup -S bram-html && adduser -S -G bram-html bram-html \
+RUN addgroup -S -g 10001 bram-html && adduser -S -u 10001 -G bram-html bram-html \
     && mkdir -p /app/data \
     && chown bram-html:bram-html /app/data
 

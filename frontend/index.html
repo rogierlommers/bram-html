@@ -26,29 +26,28 @@
     <main>
       <section class="intro" aria-labelledby="page-title">
         <div>
-          <p class="eyebrow">LEARN BY MAKING</p>
           <h1 id="page-title">What will you build today?</h1>
-          <p class="intro-description">Edit the code, then watch your creation come alive instantly.</p>
         </div>
         <div class="intro-actions">
           <button class="save-button" id="save-button" type="button">Save page</button>
-          <button class="surprise-button" id="surprise-button" type="button">
-            <span aria-hidden="true">✦</span> Surprise me
-          </button>
         </div>
       </section>
 
       <section class="lesson-strip" aria-label="Quick lessons">
-        <button class="lesson active" type="button" data-lesson="welcome">
+        <button class="lesson active" type="button" data-lesson="blank">
           <span class="lesson-number">01</span>
+          <span><strong>Blank page</strong><small>Start from scratch</small></span>
+        </button>
+        <button class="lesson" type="button" data-lesson="welcome">
+          <span class="lesson-number">02</span>
           <span><strong>Say hello</strong><small>Headings &amp; text</small></span>
         </button>
         <button class="lesson" type="button" data-lesson="colors">
-          <span class="lesson-number">02</span>
+          <span class="lesson-number">03</span>
           <span><strong>Play with color</strong><small>CSS styles</small></span>
         </button>
         <button class="lesson" type="button" data-lesson="card">
-          <span class="lesson-number">03</span>
+          <span class="lesson-number">04</span>
           <span><strong>Build a card</strong><small>Boxes &amp; spacing</small></span>
         </button>
       </section>
@@ -62,7 +61,7 @@
             </div>
             <label class="page-title-label">
               <span class="sr-only">Page title</span>
-              <input id="page-title-input" maxlength="100" value="My first page" />
+              <input id="page-title-input" maxlength="100" value="Blank page" />
             </label>
             <button class="text-button" id="reset-button" type="button">↻ Reset</button>
           </div>
@@ -70,7 +69,7 @@
             <label class="sr-only" for="code-editor">HTML and CSS code</label>
             <textarea id="code-editor" spellcheck="false" autocapitalize="off" aria-describedby="editor-tip"></textarea>
           </div>
-          <p class="panel-tip" id="editor-tip"><span aria-hidden="true">💡</span> Try changing a color. Press Esc, then Tab, to leave the editor.</p>
+          <p class="panel-tip" id="editor-tip"><span aria-hidden="true">🧑‍💻</span> source code here.</p>
         </div>
 
         <div class="panel preview-panel">
@@ -82,7 +81,7 @@
             <span class="live-label">LIVE</span>
           </div>
           <iframe id="preview" title="Live preview of your code" sandbox="allow-modals"></iframe>
-          <p class="panel-tip"><span aria-hidden="true">✨</span> Every change you make appears here.</p>
+          <p class="panel-tip"><span aria-hidden="true">✨</span> rendered html here.</p>
         </div>
       </section>
     </main>
@@ -113,8 +112,6 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <footer>
-      <p>bram-html · Made for curious minds <span aria-hidden="true">♥</span></p>
-      <p>HTML builds it. CSS makes it shine.</p>
     </footer>
 
     <script src="script.js"></script>

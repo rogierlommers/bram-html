@@ -1,4 +1,6 @@
 const lessons = {
+  blank: `<html>
+</html>`,
   welcome: `<!DOCTYPE html>
 <html>
   <head>
@@ -80,7 +82,6 @@ const editor = document.querySelector('#code-editor');
 const preview = document.querySelector('#preview');
 const lessonButtons = document.querySelectorAll('.lesson');
 const resetButton = document.querySelector('#reset-button');
-const surpriseButton = document.querySelector('#surprise-button');
 const saveButton = document.querySelector('#save-button');
 const pageTitleInput = document.querySelector('#page-title-input');
 const authButton = document.querySelector('#auth-button');
@@ -94,7 +95,7 @@ const pagesMessage = document.querySelector('#pages-message');
 const savedPages = document.querySelector('#saved-pages');
 const toast = document.querySelector('#toast');
 
-let currentLesson = 'welcome';
+let currentLesson = 'blank';
 let currentPageID = null;
 let signedInUser = null;
 let renderTimer;
@@ -150,12 +151,6 @@ lessonButtons.forEach((button) => {
 });
 
 resetButton.addEventListener('click', () => selectLesson(currentLesson));
-
-surpriseButton.addEventListener('click', () => {
-  const choices = Object.keys(lessons).filter((name) => name !== currentLesson);
-  const nextLesson = choices[Math.floor(Math.random() * choices.length)];
-  selectLesson(nextLesson);
-});
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -214,7 +209,7 @@ authButton.addEventListener('click', async () => {
   try {
     await api('/api/auth/logout', { method: 'POST' });
     setSignedInUser(null);
-    selectLesson('welcome');
+    selectLesson('blank');
     showToast('You’re signed out.');
   } catch (error) {
     showToast(error.message);
