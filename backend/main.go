@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -32,6 +33,7 @@ func main() {
 		VerifyGlobalLimit: envInt("AUTH_VERIFY_RATE_LIMIT_GLOBAL", 0),
 		LoginCodeSecret:   os.Getenv("AUTH_CODE_SECRET"),
 		StaticDir:         envOr("STATIC_DIR", "frontend"),
+		AdminEmails:       splitEmails(os.Getenv("ADMIN_EMAILS")),
 	})
 	if err != nil {
 		logger.Fatal(err)
@@ -49,6 +51,17 @@ func main() {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Fatal(err)
 	}
+}
+
+func splitEmails(value string) []string {
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	for index := range parts {
+		parts[index] = strings.TrimSpace(parts[index])
+	}
+	return parts
 }
 
 func configuredMailer(logger *logrus.Entry) Mailer {

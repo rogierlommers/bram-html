@@ -87,6 +87,7 @@ const pageSelect = document.querySelector('#page-select');
 const authButton = document.querySelector('#auth-button');
 const pagesButton = document.querySelector('#pages-button');
 const userEmail = document.querySelector('#user-email');
+const adminLink = document.querySelector('#admin-link');
 const authDialog = document.querySelector('#auth-dialog');
 const saveDialog = document.querySelector('#save-dialog');
 const pagesDialog = document.querySelector('#pages-dialog');
@@ -199,6 +200,7 @@ function setSignedInUser(user) {
   const isSignedIn = Boolean(user);
   userEmail.hidden = !isSignedIn;
   pagesButton.hidden = !isSignedIn;
+  adminLink.hidden = !user?.isAdmin;
   userEmail.textContent = user?.email || '';
   authButton.textContent = isSignedIn ? 'Sign out' : 'Sign in';
   if (!isSignedIn) {
@@ -258,6 +260,7 @@ async function refreshAuth() {
     const user = await api('/api/auth/me');
     if (signedInUser !== previousUser) return;
     setSignedInUser(user);
+    void reportActivity();
     try {
       await refreshPageOptions();
     } catch (error) {
@@ -356,6 +359,7 @@ authForm.addEventListener('submit', async (event) => {
       body: JSON.stringify({ email: pendingEmail, code: codeInput.value })
     });
     setSignedInUser(user);
+    void reportActivity();
     authDialog.close();
     resetSignIn(false);
     showToast('You’re signed in. Your pages can now be saved!');
@@ -525,3 +529,16 @@ document.querySelectorAll('[data-close]').forEach((button) => {
 
 selectLesson(currentLesson);
 refreshAuth();
+
+async function reportActivity() {
+  if (!signedInUser || document.hidden) return;
+  const user = signedInUser;
+  try {
+    await api('/api/activity', { method: 'POST' });
+  } catch (error) {
+    if (error.status === 401 && signedInUser === user) setSignedInUser(null);
+  }
+}
+
+window.setInterval(reportActivity, 60_000);
+document.addEventListener('visibilitychange', reportActivity);

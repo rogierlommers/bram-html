@@ -37,6 +37,7 @@ Copy `.env.example` values into your environment. `bram-html` uses SMTP when `SM
 | `AUTH_VERIFY_RATE_LIMIT_PER_IP` | `10` | Code verification attempts per client IP per 10 minutes; use `-1` behind a trusted rate-limiting proxy |
 | `AUTH_VERIFY_RATE_LIMIT_GLOBAL` | `500` | Code verification attempts per process per minute |
 | `AUTH_CODE_SECRET` | random on localhost | Secret used to protect stored sign-in codes; required outside local development and must be identical on every instance |
+| `ADMIN_EMAILS` | empty | Comma-separated email addresses allowed to open the statistics page at `/admin` |
 | `SMTP_HOST` | empty | SMTP host; empty enables console links |
 | `SMTP_PORT` | `587` | SMTP port |
 | `SMTP_USERNAME` | empty | SMTP username |

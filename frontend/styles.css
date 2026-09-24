@@ -86,6 +86,8 @@ button { color: inherit; }
   font-weight: 800;
 }
 
+.admin-link { color: inherit; text-decoration: none; }
+
 .header-button.primary { border-color: var(--ink); color: white; background: var(--ink); }
 
 main, footer {
@@ -323,4 +325,43 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--blue); outline-
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+}
+
+.admin-main { padding: 48px 0 64px; }
+.admin-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+.admin-heading h1 { font-size: clamp(2rem, 4vw, 3.2rem); }
+.admin-heading p:not(.eyebrow) { max-width: 540px; margin: 12px 0 0; color: var(--muted); }
+.online-pill { display: inline-flex; gap: 8px; align-items: center; padding: 9px 13px; border: 1px solid #b9e5d2; border-radius: 999px; color: #176b49; background: #e8f8f0; font-weight: 900; white-space: nowrap; }
+.online-pill::before { width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px rgba(66, 184, 131, 0.18); content: ""; }
+.stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px; }
+.stat-card, .activity-card { border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: var(--shadow); }
+.stat-card { padding: 22px; }
+.stat-card span { display: block; color: var(--muted); font-size: 0.78rem; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+.stat-card strong { display: block; margin-top: 5px; font-family: "DM Mono", monospace; font-size: 2rem; }
+.activity-card { padding: 24px; }
+.activity-header { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
+.activity-header h2 { margin: 0; font-size: 1.25rem; }
+.activity-header p { margin: 5px 0 0; color: var(--muted); font-size: 0.86rem; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 0.75rem; font-weight: 800; }
+.chart-legend span { display: inline-flex; gap: 6px; align-items: center; }
+.legend-dot { width: 9px; height: 9px; border-radius: 50%; }
+.legend-active { background: var(--blue); }
+.legend-users { background: var(--coral); }
+.legend-pages { background: var(--yellow); }
+.activity-chart { width: 100%; min-height: 310px; margin-top: 22px; overflow-x: auto; }
+.activity-chart svg { display: block; width: 100%; min-width: 700px; height: 310px; }
+.chart-grid { stroke: var(--line); stroke-width: 1; }
+.chart-label { fill: var(--muted); font: 11px Nunito, sans-serif; }
+.chart-line { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.chart-line.active { stroke: var(--blue); }
+.chart-line.users { stroke: var(--coral); }
+.chart-line.pages { stroke: #d79a12; }
+.admin-state { padding: 64px 24px; border: 2px dashed var(--line); border-radius: 18px; color: var(--muted); background: rgba(255, 255, 255, 0.55); text-align: center; }
+.admin-state a { color: var(--blue); font-weight: 900; }
+
+@media (max-width: 700px) {
+  .admin-main { padding-top: 32px; }
+  .admin-heading, .activity-header { align-items: start; flex-direction: column; }
+  .stat-grid { grid-template-columns: 1fr; }
+  .activity-card { padding: 18px; }
 }

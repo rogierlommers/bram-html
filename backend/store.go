@@ -21,8 +21,9 @@ var (
 )
 
 type User struct {
-	ID    int64  `json:"id"`
-	Email string `json:"email"`
+	ID      int64  `json:"id"`
+	Email   string `json:"email"`
+	IsAdmin bool   `json:"isAdmin"`
 }
 
 type Page struct {
@@ -31,6 +32,24 @@ type Page struct {
 	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type AdminSummary struct {
+	TotalUsers  int `json:"totalUsers"`
+	TotalPages  int `json:"totalPages"`
+	OnlineUsers int `json:"onlineUsers"`
+}
+
+type DailyActivity struct {
+	Date         string `json:"date"`
+	NewUsers     int    `json:"newUsers"`
+	PagesCreated int    `json:"pagesCreated"`
+	ActiveUsers  int    `json:"activeUsers"`
+}
+
+type AdminStats struct {
+	Summary  AdminSummary    `json:"summary"`
+	Activity []DailyActivity `json:"activity"`
 }
 
 type Store struct {
@@ -64,6 +83,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   created_at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_users_created ON users(created_at);
 
 CREATE TABLE IF NOT EXISTS login_codes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,6 +125,20 @@ CREATE TABLE IF NOT EXISTS pages (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pages_user_updated ON pages(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pages_created ON pages(created_at);
+
+CREATE TABLE IF NOT EXISTS user_activity (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  last_seen_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_user_activity_last_seen ON user_activity(last_seen_at);
+
+CREATE TABLE IF NOT EXISTS user_activity_days (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  activity_date TEXT NOT NULL,
+  PRIMARY KEY (user_id, activity_date)
+);
+CREATE INDEX IF NOT EXISTS idx_user_activity_days_date ON user_activity_days(activity_date);
 `
 	_, err := s.db.ExecContext(ctx, schema)
 	return err
@@ -308,6 +342,80 @@ WHERE sessions.token_hash = ? AND sessions.expires_at >= ?`, sessionHash, time.N
 func (s *Store) DeleteSession(ctx context.Context, sessionHash string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = ?`, sessionHash)
 	return err
+}
+
+func (s *Store) TouchActivity(ctx context.Context, userID int64, now time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `INSERT INTO user_activity (user_id, last_seen_at) VALUES (?, ?)
+ON CONFLICT(user_id) DO UPDATE SET last_seen_at = excluded.last_seen_at`, userID, now.Unix()); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO user_activity_days (user_id, activity_date) VALUES (?, ?)
+ON CONFLICT(user_id, activity_date) DO NOTHING`, userID, now.UTC().Format(time.DateOnly)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) AdminStats(ctx context.Context, now time.Time, days int, onlineWindow time.Duration) (AdminStats, error) {
+	stats := AdminStats{Activity: make([]DailyActivity, days)}
+	start := now.UTC().Truncate(24*time.Hour).AddDate(0, 0, -(days - 1))
+	byDate := make(map[string]*DailyActivity, days)
+	for index := range stats.Activity {
+		day := DailyActivity{Date: start.AddDate(0, 0, index).Format(time.DateOnly)}
+		stats.Activity[index] = day
+		byDate[day.Date] = &stats.Activity[index]
+	}
+
+	if err := s.db.QueryRowContext(ctx, `SELECT
+  (SELECT COUNT(*) FROM users),
+  (SELECT COUNT(*) FROM pages),
+  (SELECT COUNT(*) FROM user_activity WHERE last_seen_at >= ?)`,
+		now.Add(-onlineWindow).Unix()).Scan(&stats.Summary.TotalUsers, &stats.Summary.TotalPages, &stats.Summary.OnlineUsers); err != nil {
+		return AdminStats{}, err
+	}
+
+	queries := []struct {
+		query string
+		apply func(*DailyActivity, int)
+	}{
+		{`SELECT date(created_at, 'unixepoch'), COUNT(*) FROM users WHERE created_at >= ? GROUP BY 1`, func(day *DailyActivity, count int) { day.NewUsers = count }},
+		{`SELECT date(created_at, 'unixepoch'), COUNT(*) FROM pages WHERE created_at >= ? GROUP BY 1`, func(day *DailyActivity, count int) { day.PagesCreated = count }},
+		{`SELECT activity_date, COUNT(*) FROM user_activity_days WHERE activity_date >= ? GROUP BY activity_date`, func(day *DailyActivity, count int) { day.ActiveUsers = count }},
+	}
+	for index, item := range queries {
+		var argument any = start.Unix()
+		if index == 2 {
+			argument = start.Format(time.DateOnly)
+		}
+		rows, err := s.db.QueryContext(ctx, item.query, argument)
+		if err != nil {
+			return AdminStats{}, err
+		}
+		for rows.Next() {
+			var date string
+			var count int
+			if err := rows.Scan(&date, &count); err != nil {
+				_ = rows.Close()
+				return AdminStats{}, err
+			}
+			if day := byDate[date]; day != nil {
+				item.apply(day, count)
+			}
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return AdminStats{}, err
+		}
+		if err := rows.Close(); err != nil {
+			return AdminStats{}, err
+		}
+	}
+	return stats, nil
 }
 
 func (s *Store) ListPages(ctx context.Context, userID int64) ([]Page, error) {

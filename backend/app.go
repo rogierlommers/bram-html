@@ -54,6 +54,7 @@ type Config struct {
 	VerifyGlobalLimit int
 	LoginCodeSecret   string
 	StaticDir         string
+	AdminEmails       []string
 }
 
 type App struct {
@@ -65,6 +66,7 @@ type App struct {
 	loginRequestLimiter *requestLimiter
 	loginVerifyLimiter  *requestLimiter
 	loginCodeSecret     string
+	adminEmails         map[string]struct{}
 }
 
 type userContextKey struct{}
@@ -125,11 +127,23 @@ func NewApp(store *Store, mailer Mailer, config Config) (*App, error) {
 		return nil, fmt.Errorf("STATIC_DIR must contain a readable index.html: %s", config.StaticDir)
 	}
 	config.BaseURL = strings.TrimRight(baseURL.String(), "/")
+	adminEmails := make(map[string]struct{}, len(config.AdminEmails))
+	for _, email := range config.AdminEmails {
+		normalized := normalizeEmail(email)
+		if normalized == "" {
+			continue
+		}
+		if !validEmail(normalized) {
+			return nil, fmt.Errorf("ADMIN_EMAILS contains an invalid email address: %q", email)
+		}
+		adminEmails[normalized] = struct{}{}
+	}
 	app := &App{
 		store: store, mailer: mailer, config: config, cookieSecure: baseURL.Scheme == "https",
 		loginRequestLimiter: newRequestLimiter(config.LoginPerIPLimit, config.LoginGlobalLimit),
 		loginVerifyLimiter:  newRequestLimiter(config.VerifyPerIPLimit, config.VerifyGlobalLimit),
 		loginCodeSecret:     config.LoginCodeSecret,
+		adminEmails:         adminEmails,
 	}
 	app.handler = app.routes()
 	return app, nil
@@ -152,11 +166,15 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /api/auth/verify", a.verifySignIn)
 	mux.HandleFunc("GET /api/auth/me", a.withUser(a.currentUser))
 	mux.HandleFunc("POST /api/auth/logout", a.logout)
+	mux.HandleFunc("POST /api/activity", a.withUser(a.recordActivity))
 	mux.HandleFunc("GET /api/pages", a.withUser(a.listPages))
 	mux.HandleFunc("POST /api/pages", a.withUser(a.createPage))
 	mux.HandleFunc("GET /api/pages/{id}", a.withUser(a.getPage))
 	mux.HandleFunc("PUT /api/pages/{id}", a.withUser(a.updatePage))
 	mux.HandleFunc("DELETE /api/pages/{id}", a.withUser(a.deletePage))
+	mux.HandleFunc("GET /api/admin/stats", a.withUser(a.withAdmin(a.adminStats)))
+	mux.HandleFunc("GET /admin", a.withUser(a.withAdmin(a.adminPage)))
+	mux.HandleFunc("GET /admin.html", a.withUser(a.withAdmin(a.adminPage)))
 
 	mux.Handle("/", http.FileServer(http.Dir(a.config.StaticDir)))
 	return securityHeaders(mux)
@@ -259,7 +277,7 @@ func (a *App) verifyLoginCode(w http.ResponseWriter, r *http.Request) {
 		Name: a.config.CookieName, Value: sessionToken, Path: "/", HttpOnly: true,
 		Secure: a.cookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: int(a.config.SessionTTL.Seconds()),
 	})
-	writeJSON(w, http.StatusOK, user)
+	writeJSON(w, http.StatusOK, a.decorateUser(user))
 }
 
 func (a *App) confirmMagicLink(w http.ResponseWriter, r *http.Request) {
@@ -331,12 +349,50 @@ func (a *App) withUser(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "could not check session")
 			return
 		}
+		user = a.decorateUser(user)
 		next(w, r.WithContext(context.WithValue(r.Context(), userContextKey{}, user)))
 	}
 }
 
 func (a *App) currentUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, currentUser(r))
+}
+
+func (a *App) decorateUser(user User) User {
+	_, user.IsAdmin = a.adminEmails[user.Email]
+	return user
+}
+
+func (a *App) withAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !currentUser(r).IsAdmin {
+			writeError(w, http.StatusForbidden, "admin access required")
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (a *App) recordActivity(w http.ResponseWriter, r *http.Request) {
+	if err := a.store.TouchActivity(r.Context(), currentUser(r).ID, time.Now()); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not record activity")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *App) adminStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := a.store.AdminStats(r.Context(), time.Now(), 30, 5*time.Minute)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load statistics")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, stats)
+}
+
+func (a *App) adminPage(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, filepath.Join(a.config.StaticDir, "admin.html"))
 }
 
 func (a *App) logout(w http.ResponseWriter, r *http.Request) {

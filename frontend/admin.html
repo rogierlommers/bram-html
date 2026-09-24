@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="bram-html administration statistics." />
+    <title>Admin · bram-html</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Nunito:wght@500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Back to bram-html">
+        <span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>
+        <span class="brand-name">bram-html</span>
+      </a>
+      <a class="header-button" href="/">Back to playground</a>
+    </header>
+
+    <main class="admin-main">
+      <div class="admin-heading">
+        <div>
+          <p class="eyebrow">ADMIN OVERVIEW</p>
+          <h1>How bram-html is growing</h1>
+          <p>Usage and creation activity from the last 30 days.</p>
+        </div>
+        <div class="online-pill" id="online-pill" hidden><span id="online-count">0</span> online now</div>
+      </div>
+
+      <div class="admin-state" id="admin-state" role="status">Loading statistics…</div>
+      <div id="admin-dashboard" hidden>
+        <section class="stat-grid" aria-label="Summary statistics">
+          <article class="stat-card"><span>Total users</span><strong id="total-users">0</strong></article>
+          <article class="stat-card"><span>Saved pages</span><strong id="total-pages">0</strong></article>
+          <article class="stat-card"><span>Online users</span><strong id="online-users">0</strong></article>
+        </section>
+
+        <section class="activity-card" aria-labelledby="activity-title">
+          <div class="activity-header">
+            <div>
+              <h2 id="activity-title">Activity over time</h2>
+              <p>Unique active users, new accounts, and pages created each day.</p>
+            </div>
+            <div class="chart-legend" aria-hidden="true">
+              <span><i class="legend-dot legend-active"></i>Active users</span>
+              <span><i class="legend-dot legend-users"></i>New users</span>
+              <span><i class="legend-dot legend-pages"></i>Pages</span>
+            </div>
+          </div>
+          <div class="activity-chart" id="activity-chart"></div>
+        </section>
+      </div>
+    </main>
+    <script src="/admin.js"></script>
+  </body>
+</html>
