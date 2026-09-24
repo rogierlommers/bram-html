@@ -5,10 +5,11 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/smtp"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 type Mailer interface {
@@ -16,7 +17,7 @@ type Mailer interface {
 }
 
 type LogMailer struct {
-	Logger *log.Logger
+	Logger *logrus.Entry
 }
 
 func (m LogMailer) SendMagicLink(_ context.Context, email, link string) error {

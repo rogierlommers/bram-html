@@ -1,22 +1,27 @@
 package main
 
 import (
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
-	logger := log.New(os.Stdout, "bram-html: ", log.LstdFlags)
+	baseLogger := logrus.New()
+	baseLogger.SetOutput(os.Stdout)
+	logger := baseLogger.WithField("service", "bram-html")
 	dataDir := envOr("DATA_DIR", "data")
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		logger.Fatal(err)
 	}
 
-	store, err := NewStore(filepath.Join(dataDir, "bram-html.db"))
+	dbFile := filepath.Join(dataDir, "bram-html.db")
+	logger.Infof("using database file %s", dbFile)
+	store, err := NewStore(dbFile)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -48,7 +53,7 @@ func main() {
 	}
 }
 
-func configuredMailer(logger *log.Logger) Mailer {
+func configuredMailer(logger *logrus.Entry) Mailer {
 	host := os.Getenv("SMTP_HOST")
 	if host == "" {
 		logger.Print("SMTP is not configured; magic links will be printed here")
