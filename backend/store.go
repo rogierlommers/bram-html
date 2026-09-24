@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -10,10 +11,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const maxLoginCodeAttempts = 5
+
 var (
 	ErrNotFound    = errors.New("not found")
+	ErrInvalidCode = errors.New("invalid or expired login code")
 	ErrInvalidLink = errors.New("invalid or expired magic link")
-	ErrRateLimited = errors.New("magic link requested too recently")
+	ErrRateLimited = errors.New("login code requested too recently")
 )
 
 type User struct {
@@ -61,6 +65,19 @@ CREATE TABLE IF NOT EXISTS users (
   created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS login_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code_hash TEXT NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at INTEGER NOT NULL,
+  used_at INTEGER,
+  active INTEGER NOT NULL DEFAULT 0,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_codes_user_created ON login_codes(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_login_codes_expires ON login_codes(expires_at);
+
 CREATE TABLE IF NOT EXISTS magic_tokens (
   token_hash TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -93,42 +110,152 @@ CREATE INDEX IF NOT EXISTS idx_pages_user_updated ON pages(user_id, updated_at D
 	return err
 }
 
-func (s *Store) CreateMagicLink(ctx context.Context, email, tokenHash string, expiresAt time.Time) error {
+func (s *Store) CreateLoginCode(ctx context.Context, email, codeHash string, expiresAt time.Time) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer tx.Rollback()
 
 	now := time.Now()
 	if _, err = tx.ExecContext(ctx, `INSERT INTO users (email, created_at) VALUES (?, ?)
 ON CONFLICT(email) DO NOTHING`, email, now.Unix()); err != nil {
-		return err
+		return 0, err
 	}
 
 	var userID int64
 	if err = tx.QueryRowContext(ctx, `SELECT id FROM users WHERE email = ?`, email).Scan(&userID); err != nil {
-		return err
+		return 0, err
 	}
 
 	var lastCreated sql.NullInt64
-	if err = tx.QueryRowContext(ctx, `SELECT MAX(created_at) FROM magic_tokens WHERE user_id = ?`, userID).Scan(&lastCreated); err != nil {
-		return err
+	if err = tx.QueryRowContext(ctx, `SELECT MAX(created_at) FROM login_codes WHERE user_id = ?`, userID).Scan(&lastCreated); err != nil {
+		return 0, err
 	}
 	if lastCreated.Valid && now.Unix()-lastCreated.Int64 < 60 {
-		return ErrRateLimited
+		return 0, ErrRateLimited
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM login_codes
+WHERE user_id = ? AND (used_at IS NOT NULL OR expires_at < ?)`, userID, now.Unix()); err != nil {
+		return 0, err
 	}
 
-	if _, err = tx.ExecContext(ctx, `INSERT INTO magic_tokens (token_hash, user_id, expires_at, created_at)
-VALUES (?, ?, ?, ?)`, tokenHash, userID, expiresAt.Unix(), now.Unix()); err != nil {
+	result, err := tx.ExecContext(ctx, `INSERT INTO login_codes (code_hash, user_id, expires_at, created_at)
+VALUES (?, ?, ?, ?)`, codeHash, userID, expiresAt.Unix(), now.Unix())
+	if err != nil {
+		return 0, err
+	}
+	codeID, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, err
+	}
+	return codeID, nil
+}
+
+func (s *Store) RevokeLoginCode(ctx context.Context, codeID int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM login_codes WHERE id = ?`, codeID)
+	return err
+}
+
+func (s *Store) ActivateLoginCode(ctx context.Context, codeID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var userID int64
+	if err = tx.QueryRowContext(ctx, `SELECT user_id FROM login_codes WHERE id = ?`, codeID).Scan(&userID); err != nil {
+		return err
+	}
+	now := time.Now().Unix()
+	if _, err = tx.ExecContext(ctx, `UPDATE login_codes
+SET active = CASE WHEN id = ? THEN 1 ELSE 0 END,
+    used_at = CASE WHEN id = ? THEN NULL ELSE COALESCE(used_at, ?) END
+WHERE user_id = ?`, codeID, codeID, now, userID); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (s *Store) RevokeMagicLink(ctx context.Context, tokenHash string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM magic_tokens WHERE token_hash = ?`, tokenHash)
-	return err
+func (s *Store) ConsumeLoginCode(ctx context.Context, email, submittedHash, sessionHash string, sessionExpiresAt time.Time) (User, error) {
+	for attempt := 0; attempt < 3; attempt++ {
+		now := time.Now().Unix()
+		var codeID, userID int64
+		var codeHash, storedEmail string
+		var failedAttempts int
+		err := s.db.QueryRowContext(ctx, `SELECT login_codes.id, login_codes.code_hash, login_codes.attempts, users.id, users.email
+FROM login_codes JOIN users ON users.id = login_codes.user_id
+WHERE users.email = ? AND login_codes.active = 1 AND login_codes.used_at IS NULL AND login_codes.expires_at >= ?
+LIMIT 1`, email, now).Scan(&codeID, &codeHash, &failedAttempts, &userID, &storedEmail)
+		if errors.Is(err, sql.ErrNoRows) {
+			return User{}, ErrInvalidCode
+		}
+		if err != nil {
+			return User{}, err
+		}
+
+		matches := subtle.ConstantTimeCompare([]byte(codeHash), []byte(submittedHash)) == 1
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return User{}, err
+		}
+		if !matches {
+			nextAttempts := failedAttempts + 1
+			result, updateErr := tx.ExecContext(ctx, `UPDATE login_codes
+SET attempts = ?, active = CASE WHEN ? >= ? THEN 0 ELSE active END,
+    used_at = CASE WHEN ? >= ? THEN ? ELSE used_at END
+WHERE id = ? AND attempts = ? AND active = 1 AND used_at IS NULL AND expires_at >= ?`,
+				nextAttempts, nextAttempts, maxLoginCodeAttempts, nextAttempts, maxLoginCodeAttempts, now,
+				codeID, failedAttempts, now)
+			if updateErr != nil {
+				_ = tx.Rollback()
+				return User{}, updateErr
+			}
+			changed, rowsErr := result.RowsAffected()
+			if rowsErr != nil {
+				_ = tx.Rollback()
+				return User{}, rowsErr
+			}
+			if changed == 1 {
+				if err = tx.Commit(); err != nil {
+					return User{}, err
+				}
+				return User{}, ErrInvalidCode
+			}
+			_ = tx.Rollback()
+			continue
+		}
+
+		result, err := tx.ExecContext(ctx, `UPDATE login_codes SET active = 0, used_at = ?
+WHERE id = ? AND attempts = ? AND active = 1 AND used_at IS NULL AND expires_at >= ?`, now, codeID, failedAttempts, now)
+		if err != nil {
+			_ = tx.Rollback()
+			return User{}, err
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			_ = tx.Rollback()
+			return User{}, err
+		}
+		if changed != 1 {
+			_ = tx.Rollback()
+			continue
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, created_at)
+VALUES (?, ?, ?, ?)`, sessionHash, userID, sessionExpiresAt.Unix(), now); err != nil {
+			_ = tx.Rollback()
+			return User{}, err
+		}
+		if err = tx.Commit(); err != nil {
+			return User{}, err
+		}
+		return User{ID: userID, Email: storedEmail}, nil
+	}
+	return User{}, ErrInvalidCode
 }
 
 func (s *Store) ConsumeMagicLink(ctx context.Context, tokenHash, sessionHash string, sessionExpiresAt time.Time) (User, error) {
@@ -139,7 +266,6 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, tokenHash, sessionHash str
 	defer tx.Rollback()
 
 	now := time.Now().Unix()
-	var user User
 	result, err := tx.ExecContext(ctx, `UPDATE magic_tokens SET used_at = ?
 WHERE token_hash = ? AND used_at IS NULL AND expires_at >= ?`, now, tokenHash, now)
 	if err != nil {
@@ -152,11 +278,10 @@ WHERE token_hash = ? AND used_at IS NULL AND expires_at >= ?`, now, tokenHash, n
 	if changed != 1 {
 		return User{}, ErrInvalidLink
 	}
+
+	var user User
 	if err = tx.QueryRowContext(ctx, `SELECT users.id, users.email FROM users
 JOIN magic_tokens ON magic_tokens.user_id = users.id WHERE magic_tokens.token_hash = ?`, tokenHash).Scan(&user.ID, &user.Email); err != nil {
-		return User{}, err
-	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM magic_tokens WHERE user_id = ? AND token_hash <> ?`, user.ID, tokenHash); err != nil {
 		return User{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, created_at)

@@ -197,7 +197,7 @@ h1 {
 .live-label { padding: 4px 8px; border-radius: 999px; color: #176b49; background: #def5e9; font-size: 0.65rem; font-weight: 900; letter-spacing: 0.08em; }
 
 .page-title-label { flex: 1; margin: 0 12px; }
-.page-title-label input {
+.page-title-label select {
   width: 100%;
   padding: 7px 10px;
   border: 1px solid transparent;
@@ -208,7 +208,7 @@ h1 {
   font-size: 0.8rem;
   font-weight: 700;
 }
-.page-title-label input:focus { border-color: var(--blue); background: white; }
+.page-title-label select:focus { border-color: var(--blue); background: white; }
 
 .editor-wrap { flex: 1; min-height: 0; }
 #code-editor {

@@ -20,17 +20,17 @@ import (
 )
 
 type captureMailer struct {
-	link string
+	code string
 }
 
-func (m *captureMailer) SendMagicLink(_ context.Context, _, link string) error {
-	m.link = link
+func (m *captureMailer) SendLoginCode(_ context.Context, _, code string) error {
+	m.code = code
 	return nil
 }
 
 type failingMailer struct{}
 
-func (failingMailer) SendMagicLink(context.Context, string, string) error {
+func (failingMailer) SendLoginCode(context.Context, string, string) error {
 	return errors.New("mail server unavailable")
 }
 
@@ -44,8 +44,9 @@ func newTestApp(t *testing.T) (*App, *captureMailer) {
 
 	mailer := &captureMailer{}
 	app, err := NewApp(store, mailer, Config{
-		BaseURL:   "http://example.com",
-		StaticDir: filepath.Join("..", "frontend"),
+		BaseURL:         "http://example.com",
+		LoginCodeSecret: "test-login-code-secret",
+		StaticDir:       filepath.Join("..", "frontend"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -79,31 +80,22 @@ func authenticateAs(t *testing.T, app *App, mailer *captureMailer, email string)
 	t.Helper()
 	response := requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/request", map[string]string{"email": email}, nil)
 	if response.Code != http.StatusAccepted {
-		t.Fatalf("request magic link: got %d: %s", response.Code, response.Body.String())
+		t.Fatalf("request login code: got %d: %s", response.Code, response.Body.String())
 	}
-	if mailer.link == "" {
-		t.Fatal("magic link was not sent")
+	if len(mailer.code) != 6 {
+		t.Fatalf("login code = %q, want six digits", mailer.code)
 	}
-
-	magicURL, err := url.Parse(mailer.link)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response = requestJSON(t, app.Handler(), http.MethodGet, magicURL.RequestURI(), nil, nil)
-	if response.Code != http.StatusOK || len(response.Result().Cookies()) != 0 {
-		t.Fatalf("magic link confirmation: got %d with cookies %#v", response.Code, response.Result().Cookies())
-	}
-	if response.Header().Get("Cache-Control") != "no-store" || response.Header().Get("Referrer-Policy") != "no-referrer" {
-		t.Fatalf("magic confirmation security headers: %#v", response.Header())
+	if _, err := strconv.Atoi(mailer.code); err != nil {
+		t.Fatalf("login code = %q, want six digits", mailer.code)
 	}
 
-	form := url.Values{"token": {magicURL.Query().Get("token")}}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/verify", strings.NewReader(form.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response = httptest.NewRecorder()
-	app.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusSeeOther {
-		t.Fatalf("verify magic link: got %d: %s", response.Code, response.Body.String())
+	response = requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/verify", map[string]string{"email": email, "code": mailer.code}, nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("verify login code: got %d: %s", response.Code, response.Body.String())
+	}
+	var user User
+	if err := json.NewDecoder(response.Body).Decode(&user); err != nil || user.Email != email {
+		t.Fatalf("verified user: got %#v, decode error %v", user, err)
 	}
 	cookies := response.Result().Cookies()
 	if len(cookies) != 1 || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteLaxMode {
@@ -112,18 +104,193 @@ func authenticateAs(t *testing.T, app *App, mailer *captureMailer, email string)
 	return cookies[0]
 }
 
-func TestMagicLinkIsSingleUse(t *testing.T) {
+func TestLoginCodeIsSingleUse(t *testing.T) {
 	app, mailer := newTestApp(t)
 	_ = authenticate(t, app, mailer)
 
-	magicURL, _ := url.Parse(mailer.link)
-	form := url.Values{"token": {magicURL.Query().Get("token")}}
+	response := requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/verify", map[string]string{"email": "kid@example.com", "code": mailer.code}, nil)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("reused login code: got %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestOutstandingMagicLinkRemainsValidDuringMigration(t *testing.T) {
+	app, _ := newTestApp(t)
+	const token = "legacy-high-entropy-token"
+	now := time.Now().Unix()
+	result, err := app.store.db.Exec(`INSERT INTO users (email, created_at) VALUES (?, ?)`, "kid@example.com", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userID, err := result.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.store.db.Exec(`INSERT INTO magic_tokens (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)`, hashToken(token), userID, now+60, now); err != nil {
+		t.Fatal(err)
+	}
+
+	response := requestJSON(t, app.Handler(), http.MethodGet, "/api/auth/verify?token="+url.QueryEscape(token), nil, nil)
+	if response.Code != http.StatusOK || len(response.Result().Cookies()) != 0 {
+		t.Fatalf("legacy link confirmation: got %d with cookies %#v", response.Code, response.Result().Cookies())
+	}
+
+	form := url.Values{"token": {token}}
 	request := httptest.NewRequest(http.MethodPost, "/api/auth/verify", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response := httptest.NewRecorder()
+	response = httptest.NewRecorder()
 	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusSeeOther || len(response.Result().Cookies()) != 1 {
+		t.Fatalf("legacy link verification: got %d with cookies %#v", response.Code, response.Result().Cookies())
+	}
+}
+
+func TestLoginCodeRequiresMatchingEmail(t *testing.T) {
+	app, mailer := newTestApp(t)
+	response := requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/request", map[string]string{"email": "kid@example.com"}, nil)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("request login code: got %d: %s", response.Code, response.Body.String())
+	}
+
+	response = requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/verify", map[string]string{
+		"email": "someone-else@example.com",
+		"code":  mailer.code,
+	}, nil)
 	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("reused magic link: got %d, want %d", response.Code, http.StatusUnauthorized)
+		t.Fatalf("code with wrong email: got %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+
+	response = requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/verify", map[string]string{
+		"email": "kid@example.com",
+		"code":  mailer.code,
+	}, nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("code after wrong email attempt: got %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestLoginCodeStoredWithServerSecret(t *testing.T) {
+	app, mailer := newTestApp(t)
+	response := requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/request", map[string]string{"email": "kid@example.com"}, nil)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("request login code: got %d: %s", response.Code, response.Body.String())
+	}
+
+	var storedHash string
+	if err := app.store.db.QueryRow(`SELECT code_hash FROM login_codes WHERE active = 1`).Scan(&storedHash); err != nil {
+		t.Fatal(err)
+	}
+	if storedHash != hashLoginCode(app.loginCodeSecret, "kid@example.com", mailer.code) {
+		t.Fatal("stored login code hash does not use the application secret")
+	}
+	if storedHash == hashToken("kid@example.com\x00"+mailer.code) {
+		t.Fatal("stored login code uses an unkeyed hash")
+	}
+}
+
+func TestRevokingCollidingReplacementPreservesActiveCode(t *testing.T) {
+	app, _ := newTestApp(t)
+	const email = "kid@example.com"
+	codeHash := hashLoginCode(app.loginCodeSecret, email, "123456")
+	firstID, err := app.store.CreateLoginCode(context.Background(), email, codeHash, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.store.ActivateLoginCode(context.Background(), firstID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.store.db.Exec(`UPDATE login_codes SET created_at = created_at - 120 WHERE id = ?`, firstID); err != nil {
+		t.Fatal(err)
+	}
+	secondID, err := app.store.CreateLoginCode(context.Background(), email, codeHash, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.store.RevokeLoginCode(context.Background(), secondID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := app.store.ConsumeLoginCode(context.Background(), email, codeHash, hashToken("session"), time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("active code after colliding replacement failed: %v", err)
+	}
+}
+
+func TestLoginCodeVerificationIsRateLimited(t *testing.T) {
+	app, mailer := newTestApp(t)
+	response := requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/request", map[string]string{"email": "kid@example.com"}, nil)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("request login code: got %d: %s", response.Code, response.Body.String())
+	}
+
+	wrongCode := "000000"
+	if mailer.code == wrongCode {
+		wrongCode = "000001"
+	}
+	for attempt := 0; attempt < app.loginVerifyLimiter.perIPLimit; attempt++ {
+		response = requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/verify", map[string]string{
+			"email": "kid@example.com",
+			"code":  wrongCode,
+		}, nil)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("verification attempt %d: got %d, want %d", attempt, response.Code, http.StatusUnauthorized)
+		}
+	}
+
+	response = requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/verify", map[string]string{
+		"email": "kid@example.com",
+		"code":  wrongCode,
+	}, nil)
+	if response.Code != http.StatusTooManyRequests {
+		t.Fatalf("rate-limited verification: got %d, want %d", response.Code, http.StatusTooManyRequests)
+	}
+}
+
+func TestLoginCodeExpiresAfterFailedAttempts(t *testing.T) {
+	app, mailer := newTestApp(t)
+	response := requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/request", map[string]string{"email": "kid@example.com"}, nil)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("request login code: got %d: %s", response.Code, response.Body.String())
+	}
+
+	wrongCode := "000000"
+	if mailer.code == wrongCode {
+		wrongCode = "000001"
+	}
+	for attempt := 0; attempt < maxLoginCodeAttempts; attempt++ {
+		response = requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/verify", map[string]string{
+			"email": "kid@example.com",
+			"code":  wrongCode,
+		}, nil)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("failed attempt %d: got %d, want %d", attempt, response.Code, http.StatusUnauthorized)
+		}
+	}
+
+	response = requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/verify", map[string]string{
+		"email": "kid@example.com",
+		"code":  mailer.code,
+	}, nil)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("correct code after failed attempts: got %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestExpiredLoginCodeIsRejected(t *testing.T) {
+	app, mailer := newTestApp(t)
+	response := requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/request", map[string]string{"email": "kid@example.com"}, nil)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("request login code: got %d: %s", response.Code, response.Body.String())
+	}
+	if _, err := app.store.db.Exec(`UPDATE login_codes SET expires_at = 0`); err != nil {
+		t.Fatal(err)
+	}
+
+	response = requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/verify", map[string]string{
+		"email": "kid@example.com",
+		"code":  mailer.code,
+	}, nil)
+	if response.Code != http.StatusUnauthorized || len(response.Result().Cookies()) != 0 {
+		t.Fatalf("expired code: got %d with cookies %#v", response.Code, response.Result().Cookies())
 	}
 }
 
@@ -213,19 +380,19 @@ func TestFailedEmailDoesNotRateLimitRetry(t *testing.T) {
 	mailer := &captureMailer{}
 	app.mailer = mailer
 	response = requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/request", map[string]string{"email": "kid@example.com"}, nil)
-	if response.Code != http.StatusAccepted || mailer.link == "" {
-		t.Fatalf("retry after failed send: got %d, link %q", response.Code, mailer.link)
+	if response.Code != http.StatusAccepted || mailer.code == "" {
+		t.Fatalf("retry after failed send: got %d, code %q", response.Code, mailer.code)
 	}
 }
 
-func TestFailedReplacementPreservesPreviousMagicLink(t *testing.T) {
+func TestFailedReplacementPreservesPreviousLoginCode(t *testing.T) {
 	app, mailer := newTestApp(t)
 	response := requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/request", map[string]string{"email": "kid@example.com"}, nil)
 	if response.Code != http.StatusAccepted {
-		t.Fatalf("first magic link: got %d", response.Code)
+		t.Fatalf("first login code: got %d", response.Code)
 	}
-	firstLink := mailer.link
-	if _, err := app.store.db.Exec(`UPDATE magic_tokens SET created_at = created_at - 120`); err != nil {
+	firstCode := mailer.code
+	if _, err := app.store.db.Exec(`UPDATE login_codes SET created_at = created_at - 120`); err != nil {
 		t.Fatal(err)
 	}
 	app.mailer = failingMailer{}
@@ -234,25 +401,49 @@ func TestFailedReplacementPreservesPreviousMagicLink(t *testing.T) {
 		t.Fatalf("failed replacement: got %d", response.Code)
 	}
 
-	magicURL, _ := url.Parse(firstLink)
-	form := url.Values{"token": {magicURL.Query().Get("token")}}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/verify", strings.NewReader(form.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response = httptest.NewRecorder()
-	app.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusSeeOther {
-		t.Fatalf("previous link after failed replacement: got %d: %s", response.Code, response.Body.String())
+	response = requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/verify", map[string]string{"email": "kid@example.com", "code": firstCode}, nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("previous code after failed replacement: got %d: %s", response.Code, response.Body.String())
 	}
 }
 
-func TestInvalidEmailDoesNotCreateMagicLink(t *testing.T) {
+func TestSuccessfulReplacementInvalidatesPreviousLoginCode(t *testing.T) {
+	app, mailer := newTestApp(t)
+	response := requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/request", map[string]string{"email": "kid@example.com"}, nil)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("first login code: got %d", response.Code)
+	}
+	firstCode := mailer.code
+	if _, err := app.store.db.Exec(`UPDATE login_codes SET created_at = created_at - 120`); err != nil {
+		t.Fatal(err)
+	}
+
+	response = requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/request", map[string]string{"email": "kid@example.com"}, nil)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("replacement login code: got %d", response.Code)
+	}
+	if firstCode == mailer.code {
+		t.Skip("random generator returned the same code twice")
+	}
+
+	response = requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/verify", map[string]string{"email": "kid@example.com", "code": firstCode}, nil)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("superseded code: got %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+	response = requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/verify", map[string]string{"email": "kid@example.com", "code": mailer.code}, nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("replacement code: got %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestInvalidEmailDoesNotCreateLoginCode(t *testing.T) {
 	app, mailer := newTestApp(t)
 	response := requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/request", map[string]string{"email": "not-an-email"}, nil)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("invalid email: got %d, want %d", response.Code, http.StatusBadRequest)
 	}
-	if mailer.link != "" {
-		t.Fatal("invalid email sent a magic link")
+	if mailer.code != "" {
+		t.Fatal("invalid email sent a login code")
 	}
 }
 
@@ -277,7 +468,7 @@ func TestSMTPMailerHonorsContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 	started := time.Now()
-	err = (SMTPMailer{Host: host, Port: port, From: "test@example.com"}).SendMagicLink(ctx, "kid@example.com", "http://example.com/magic")
+	err = (SMTPMailer{Host: host, Port: port, From: "test@example.com"}).SendLoginCode(ctx, "kid@example.com", "123456")
 	if err == nil {
 		t.Fatal("stalled SMTP send unexpectedly succeeded")
 	}
@@ -313,22 +504,22 @@ func TestSMTPMailerRequiresSTARTTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = (SMTPMailer{Host: host, Port: port, From: "test@example.com"}).SendMagicLink(context.Background(), "kid@example.com", "http://example.com/magic")
+	err = (SMTPMailer{Host: host, Port: port, From: "test@example.com"}).SendLoginCode(context.Background(), "kid@example.com", "123456")
 	if err == nil || !strings.Contains(err.Error(), "STARTTLS") {
 		t.Fatalf("SMTP without STARTTLS returned %v", err)
 	}
 }
 
-func TestMagicLinkRateLimitSpansDifferentEmails(t *testing.T) {
+func TestLoginCodeRateLimitSpansDifferentEmails(t *testing.T) {
 	app, mailer := newTestApp(t)
-	for index := 0; index < app.loginLimiter.perIPLimit; index++ {
+	for index := 0; index < app.loginRequestLimiter.perIPLimit; index++ {
 		response := requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/request", map[string]string{
 			"email": fmt.Sprintf("kid%d@example.com", index),
 		}, nil)
 		if response.Code != http.StatusAccepted {
 			t.Fatalf("request %d: got %d", index, response.Code)
 		}
-		mailer.link = ""
+		mailer.code = ""
 	}
 	response := requestJSON(t, app.Handler(), http.MethodPost, "/api/auth/request", map[string]string{"email": "blocked@example.com"}, nil)
 	if response.Code != http.StatusTooManyRequests {
@@ -377,6 +568,19 @@ func TestNewAppRejectsInvalidBaseURL(t *testing.T) {
 	}
 }
 
+func TestNewAppRequiresLoginCodeSecretOutsideLocalDevelopment(t *testing.T) {
+	store, err := NewStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	_, err = NewApp(store, &captureMailer{}, Config{BaseURL: "https://example.com", StaticDir: filepath.Join("..", "frontend")})
+	if err == nil || !strings.Contains(err.Error(), "AUTH_CODE_SECRET") {
+		t.Fatalf("missing production AUTH_CODE_SECRET returned %v", err)
+	}
+}
+
 func TestStaticDirectoryValidationAndServing(t *testing.T) {
 	store, err := NewStore(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -388,7 +592,7 @@ func TestStaticDirectoryValidationAndServing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(staticDir, "index.html"), []byte("static sentinel"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	app, err := NewApp(store, &captureMailer{}, Config{BaseURL: "http://example.com", StaticDir: staticDir})
+	app, err := NewApp(store, &captureMailer{}, Config{BaseURL: "http://example.com", LoginCodeSecret: "test-login-code-secret", StaticDir: staticDir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +606,7 @@ func TestStaticDirectoryValidationAndServing(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, invalidPath := range []string{"", filepath.Join(t.TempDir(), "missing"), regularFile, t.TempDir()} {
-		if _, err := NewApp(store, &captureMailer{}, Config{BaseURL: "http://example.com", StaticDir: invalidPath}); err == nil || !strings.Contains(err.Error(), "STATIC_DIR") {
+		if _, err := NewApp(store, &captureMailer{}, Config{BaseURL: "http://example.com", LoginCodeSecret: "test-login-code-secret", StaticDir: invalidPath}); err == nil || !strings.Contains(err.Error(), "STATIC_DIR") {
 			t.Fatalf("invalid static directory %q returned %v", invalidPath, err)
 		}
 	}

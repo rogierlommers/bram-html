@@ -18,7 +18,7 @@ You need Go 1.25 or newer.
 go run ./backend
 ```
 
-Open [http://localhost:8080](http://localhost:8080). The first time you request a sign-in link, it is printed in the terminal. Open that link in the same browser to sign in.
+Open [http://localhost:8080](http://localhost:8080). When you request a sign-in code, it is printed in the terminal. Enter that code in the sign-in dialog.
 
 The SQLite database is created at `data/bram-html.db` and is excluded from Git.
 
@@ -29,11 +29,14 @@ Copy `.env.example` values into your environment. `bram-html` uses SMTP when `SM
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `ADDR` | `:8080` | Server listen address |
-| `BASE_URL` | `http://localhost:8080` | Public URL used in magic links |
+| `BASE_URL` | `http://localhost:8080` | Public origin used for security-sensitive URL and cookie settings |
 | `DATA_DIR` | `data` | SQLite database directory |
 | `STATIC_DIR` | `frontend` | Directory containing the static frontend files |
 | `AUTH_RATE_LIMIT_PER_IP` | `5` | Sign-in requests per client IP per 10 minutes; use `-1` behind a trusted rate-limiting proxy |
 | `AUTH_RATE_LIMIT_GLOBAL` | `100` | Sign-in requests per process per minute |
+| `AUTH_VERIFY_RATE_LIMIT_PER_IP` | `10` | Code verification attempts per client IP per 10 minutes; use `-1` behind a trusted rate-limiting proxy |
+| `AUTH_VERIFY_RATE_LIMIT_GLOBAL` | `500` | Code verification attempts per process per minute |
+| `AUTH_CODE_SECRET` | random on localhost | Secret used to protect stored sign-in codes; required outside local development and must be identical on every instance |
 | `SMTP_HOST` | empty | SMTP host; empty enables console links |
 | `SMTP_PORT` | `587` | SMTP port |
 | `SMTP_USERNAME` | empty | SMTP username |
@@ -41,7 +44,7 @@ Copy `.env.example` values into your environment. `bram-html` uses SMTP when `SM
 | `SMTP_FROM` | `bram-html@example.com` | Sender address |
 
 In production, set `BASE_URL` to an HTTPS URL. Session cookies automatically use the `Secure` flag when `BASE_URL` begins with `https://`.
-SMTP delivery requires STARTTLS so that bearer sign-in links are never sent to the mail server in plaintext. The app also applies a small in-memory sign-in request limit. Production deployments should add rate limiting at the reverse proxy or edge; when all traffic reaches Go from one trusted proxy, set `AUTH_RATE_LIMIT_PER_IP=-1` so unrelated users do not share one application-level allowance. Keep the global limit enabled.
+SMTP delivery requires STARTTLS so that sign-in codes are never sent to the mail server in plaintext. The app also applies small in-memory limits to sign-in requests and verification attempts. Production deployments should add rate limiting at the reverse proxy or edge; when all traffic reaches Go from one trusted proxy, set both `AUTH_RATE_LIMIT_PER_IP=-1` and `AUTH_VERIFY_RATE_LIMIT_PER_IP=-1` so unrelated users do not share an application-level allowance. Keep both global limits enabled.
 
 ## Test
 
@@ -50,7 +53,7 @@ cd backend
 go test ./...
 ```
 
-The integration tests exercise one-time magic links, session cookies, authentication requirements, and the complete saved-page lifecycle.
+The integration tests exercise one-time sign-in codes, session cookies, authentication requirements, and the complete saved-page lifecycle.
 
 ## Docker
 

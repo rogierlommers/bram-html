@@ -25,10 +25,13 @@ func main() {
 	mailer := configuredMailer(logger)
 	baseURL := envOr("BASE_URL", "http://localhost:8080")
 	app, err := NewApp(store, mailer, Config{
-		BaseURL:          baseURL,
-		LoginPerIPLimit:  envInt("AUTH_RATE_LIMIT_PER_IP", 0),
-		LoginGlobalLimit: envInt("AUTH_RATE_LIMIT_GLOBAL", 0),
-		StaticDir:        envOr("STATIC_DIR", "frontend"),
+		BaseURL:           baseURL,
+		LoginPerIPLimit:   envInt("AUTH_RATE_LIMIT_PER_IP", 0),
+		LoginGlobalLimit:  envInt("AUTH_RATE_LIMIT_GLOBAL", 0),
+		VerifyPerIPLimit:  envInt("AUTH_VERIFY_RATE_LIMIT_PER_IP", 0),
+		VerifyGlobalLimit: envInt("AUTH_VERIFY_RATE_LIMIT_GLOBAL", 0),
+		LoginCodeSecret:   os.Getenv("AUTH_CODE_SECRET"),
+		StaticDir:         envOr("STATIC_DIR", "frontend"),
 	})
 	if err != nil {
 		logger.Fatal(err)
@@ -51,7 +54,7 @@ func main() {
 func configuredMailer(logger *logrus.Entry) Mailer {
 	host := os.Getenv("SMTP_HOST")
 	if host == "" {
-		logger.Print("SMTP is not configured; magic links will be printed here")
+		logger.Print("SMTP is not configured; login codes will be printed here")
 		return LogMailer{Logger: logger}
 	}
 	return SMTPMailer{

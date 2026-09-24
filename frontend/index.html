@@ -57,11 +57,13 @@
           <div class="panel-header">
             <div>
               <span class="status-dot coral" aria-hidden="true"></span>
-              <h2>Page name</h2>
+              <h2>Page</h2>
             </div>
             <label class="page-title-label">
-              <span class="sr-only">Page title</span>
-              <input id="page-title-input" maxlength="100" value="Blank page" />
+              <span class="sr-only">Select a page</span>
+              <select id="page-select">
+                <option value="new">New page</option>
+              </select>
             </label>
             <button class="text-button" id="reset-button" type="button">↻ Reset</button>
           </div>
@@ -91,11 +93,26 @@
         <button class="modal-close" type="button" data-close="auth-dialog" aria-label="Close">×</button>
         <p class="eyebrow">SAVE YOUR CREATIONS</p>
         <h2 id="auth-title">Sign in to bram-html</h2>
-        <p>Enter an email address. We’ll send a safe, one-time sign-in link—no password needed.</p>
+        <p id="auth-description">Enter an email address. We’ll send you a six-digit sign-in code.</p>
         <label class="field-label" for="email-input">Email address</label>
         <input class="field-input" id="email-input" name="email" type="email" autocomplete="email" required />
-        <button class="modal-action" type="submit">Email my sign-in link</button>
+        <label class="field-label" id="code-label" for="code-input" hidden>Sign-in code</label>
+        <input class="field-input" id="code-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" hidden />
+        <button class="modal-action" id="auth-submit" type="submit">Email my sign-in code</button>
+        <button class="text-button" id="auth-back" type="button" hidden>Use another email</button>
         <p class="form-message" id="auth-message" role="status"></p>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="save-dialog" aria-labelledby="save-title">
+      <form class="modal-card" id="save-form">
+        <button class="modal-close" type="button" data-close="save-dialog" aria-label="Close">×</button>
+        <p class="eyebrow">SAVE YOUR CREATION</p>
+        <h2 id="save-title">Name your page</h2>
+        <label class="field-label" for="page-name-input">Page name</label>
+        <input class="field-input" id="page-name-input" name="page-name" maxlength="100" required />
+        <button class="modal-action" type="submit">Save page</button>
+        <p class="form-message" id="save-message" role="status"></p>
       </form>
     </dialog>
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -11,6 +12,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"math/big"
 	"net/http"
 	"net/mail"
 	"net/url"
@@ -23,9 +25,11 @@ import (
 )
 
 const (
-	defaultMagicLinkTTL   = 15 * time.Minute
+	defaultLoginCodeTTL   = 15 * time.Minute
 	defaultSessionTTL     = 30 * 24 * time.Hour
 	defaultMaxRequestBody = 1 << 20
+	defaultVerifyIPLimit  = 10
+	defaultVerifyAllLimit = 500
 )
 
 var errRequestTooLarge = errors.New("request body is too large")
@@ -39,23 +43,28 @@ var magicLinkPage = template.Must(template.New("magic-link").Parse(`<!doctype ht
 <button class="save-button" type="submit">Yes, sign me in</button></form></section></main></body></html>`))
 
 type Config struct {
-	BaseURL          string
-	CookieName       string
-	MagicLinkTTL     time.Duration
-	SessionTTL       time.Duration
-	MaxRequestBody   int64
-	LoginPerIPLimit  int
-	LoginGlobalLimit int
-	StaticDir        string
+	BaseURL           string
+	CookieName        string
+	LoginCodeTTL      time.Duration
+	SessionTTL        time.Duration
+	MaxRequestBody    int64
+	LoginPerIPLimit   int
+	LoginGlobalLimit  int
+	VerifyPerIPLimit  int
+	VerifyGlobalLimit int
+	LoginCodeSecret   string
+	StaticDir         string
 }
 
 type App struct {
-	store        *Store
-	mailer       Mailer
-	config       Config
-	handler      http.Handler
-	cookieSecure bool
-	loginLimiter *requestLimiter
+	store               *Store
+	mailer              Mailer
+	config              Config
+	handler             http.Handler
+	cookieSecure        bool
+	loginRequestLimiter *requestLimiter
+	loginVerifyLimiter  *requestLimiter
+	loginCodeSecret     string
 }
 
 type userContextKey struct{}
@@ -64,8 +73,8 @@ func NewApp(store *Store, mailer Mailer, config Config) (*App, error) {
 	if config.CookieName == "" {
 		config.CookieName = "bram_session"
 	}
-	if config.MagicLinkTTL == 0 {
-		config.MagicLinkTTL = defaultMagicLinkTTL
+	if config.LoginCodeTTL == 0 {
+		config.LoginCodeTTL = defaultLoginCodeTTL
 	}
 	if config.SessionTTL == 0 {
 		config.SessionTTL = defaultSessionTTL
@@ -79,9 +88,25 @@ func NewApp(store *Store, mailer Mailer, config Config) (*App, error) {
 	if config.LoginGlobalLimit == 0 {
 		config.LoginGlobalLimit = 100
 	}
+	if config.VerifyPerIPLimit == 0 {
+		config.VerifyPerIPLimit = defaultVerifyIPLimit
+	}
+	if config.VerifyGlobalLimit == 0 {
+		config.VerifyGlobalLimit = defaultVerifyAllLimit
+	}
 	baseURL, err := validateBaseURL(config.BaseURL)
 	if err != nil {
 		return nil, err
+	}
+	if config.LoginCodeSecret == "" {
+		if baseURL.Hostname() != "localhost" && baseURL.Hostname() != "127.0.0.1" {
+			return nil, errors.New("AUTH_CODE_SECRET must be set outside local development")
+		}
+		secret, err := randomToken()
+		if err != nil {
+			return nil, errors.New("could not initialize login code signing")
+		}
+		config.LoginCodeSecret = secret
 	}
 	if config.StaticDir == "" {
 		return nil, errors.New("STATIC_DIR must point to the frontend directory")
@@ -100,7 +125,12 @@ func NewApp(store *Store, mailer Mailer, config Config) (*App, error) {
 		return nil, fmt.Errorf("STATIC_DIR must contain a readable index.html: %s", config.StaticDir)
 	}
 	config.BaseURL = strings.TrimRight(baseURL.String(), "/")
-	app := &App{store: store, mailer: mailer, config: config, cookieSecure: baseURL.Scheme == "https", loginLimiter: newRequestLimiter(config.LoginPerIPLimit, config.LoginGlobalLimit)}
+	app := &App{
+		store: store, mailer: mailer, config: config, cookieSecure: baseURL.Scheme == "https",
+		loginRequestLimiter: newRequestLimiter(config.LoginPerIPLimit, config.LoginGlobalLimit),
+		loginVerifyLimiter:  newRequestLimiter(config.VerifyPerIPLimit, config.VerifyGlobalLimit),
+		loginCodeSecret:     config.LoginCodeSecret,
+	}
 	app.handler = app.routes()
 	return app, nil
 }
@@ -117,9 +147,9 @@ func (a *App) Handler() http.Handler { return a.handler }
 
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/auth/request", a.requestMagicLink)
+	mux.HandleFunc("POST /api/auth/request", a.requestLoginCode)
 	mux.HandleFunc("GET /api/auth/verify", a.confirmMagicLink)
-	mux.HandleFunc("POST /api/auth/verify", a.verifyMagicLink)
+	mux.HandleFunc("POST /api/auth/verify", a.verifySignIn)
 	mux.HandleFunc("GET /api/auth/me", a.withUser(a.currentUser))
 	mux.HandleFunc("POST /api/auth/logout", a.logout)
 	mux.HandleFunc("GET /api/pages", a.withUser(a.listPages))
@@ -142,7 +172,7 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func (a *App) requestMagicLink(w http.ResponseWriter, r *http.Request) {
+func (a *App) requestLoginCode(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Email string `json:"email"`
 	}
@@ -150,40 +180,86 @@ func (a *App) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 		writeDecodeError(w, err)
 		return
 	}
-	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
-	parsed, err := mail.ParseAddress(input.Email)
-	if err != nil || parsed.Address != input.Email || len(input.Email) > 254 {
+	input.Email = normalizeEmail(input.Email)
+	if !validEmail(input.Email) {
 		writeError(w, http.StatusBadRequest, "enter a valid email address")
 		return
 	}
-	if !a.loginLimiter.Allow(r) {
+	if !a.loginRequestLimiter.Allow(r) {
 		w.Header().Set("Retry-After", "600")
 		writeError(w, http.StatusTooManyRequests, "too many sign-in requests; try again later")
 		return
 	}
 
-	token, err := randomToken()
+	code, err := randomLoginCode()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not create sign-in link")
+		writeError(w, http.StatusInternalServerError, "could not create sign-in code")
 		return
 	}
-	err = a.store.CreateMagicLink(r.Context(), input.Email, hashToken(token), time.Now().Add(a.config.MagicLinkTTL))
+	codeHash := hashLoginCode(a.loginCodeSecret, input.Email, code)
+	codeID, err := a.store.CreateLoginCode(r.Context(), input.Email, codeHash, time.Now().Add(a.config.LoginCodeTTL))
 	if errors.Is(err, ErrRateLimited) {
-		writeJSON(w, http.StatusAccepted, map[string]string{"message": "If that address can receive mail, a sign-in link is on its way."})
+		writeJSON(w, http.StatusAccepted, map[string]string{"message": "If that address can receive mail, a sign-in code is on its way."})
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not create sign-in link")
+		writeError(w, http.StatusInternalServerError, "could not create sign-in code")
 		return
 	}
 
-	link := a.config.BaseURL + "/api/auth/verify?token=" + url.QueryEscape(token)
-	if err := a.mailer.SendMagicLink(r.Context(), input.Email, link); err != nil {
-		_ = a.store.RevokeMagicLink(r.Context(), hashToken(token))
+	if err := a.mailer.SendLoginCode(r.Context(), input.Email, code); err != nil {
+		_ = a.store.RevokeLoginCode(r.Context(), codeID)
 		writeError(w, http.StatusBadGateway, "could not send sign-in email")
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"message": "If that address can receive mail, a sign-in link is on its way."})
+	if err := a.store.ActivateLoginCode(r.Context(), codeID); err != nil {
+		_ = a.store.RevokeLoginCode(r.Context(), codeID)
+		writeError(w, http.StatusInternalServerError, "could not activate sign-in code")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"message": "If that address can receive mail, a sign-in code is on its way."})
+}
+
+func (a *App) verifyLoginCode(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Email string `json:"email"`
+		Code  string `json:"code"`
+	}
+	if err := a.decodeJSON(w, r, &input); err != nil {
+		writeDecodeError(w, err)
+		return
+	}
+	input.Email = normalizeEmail(input.Email)
+	input.Code = strings.TrimSpace(input.Code)
+	if !validEmail(input.Email) || !validLoginCode(input.Code) {
+		writeError(w, http.StatusUnauthorized, "invalid or expired sign-in code")
+		return
+	}
+	if !a.loginVerifyLimiter.Allow(r) {
+		w.Header().Set("Retry-After", "600")
+		writeError(w, http.StatusTooManyRequests, "too many sign-in attempts; try again later")
+		return
+	}
+	sessionToken, err := randomToken()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not create session")
+		return
+	}
+	codeHash := hashLoginCode(a.loginCodeSecret, input.Email, input.Code)
+	user, err := a.store.ConsumeLoginCode(r.Context(), input.Email, codeHash, hashToken(sessionToken), time.Now().Add(a.config.SessionTTL))
+	if errors.Is(err, ErrInvalidCode) {
+		writeError(w, http.StatusUnauthorized, "invalid or expired sign-in code")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not create session")
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: a.config.CookieName, Value: sessionToken, Path: "/", HttpOnly: true,
+		Secure: a.cookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: int(a.config.SessionTTL.Seconds()),
+	})
+	writeJSON(w, http.StatusOK, user)
 }
 
 func (a *App) confirmMagicLink(w http.ResponseWriter, r *http.Request) {
@@ -195,9 +271,15 @@ func (a *App) confirmMagicLink(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := magicLinkPage.Execute(w, token); err != nil {
+	_ = magicLinkPage.Execute(w, token)
+}
+
+func (a *App) verifySignIn(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		a.verifyMagicLink(w, r)
 		return
 	}
+	a.verifyLoginCode(w, r)
 }
 
 func (a *App) verifyMagicLink(w http.ResponseWriter, r *http.Request) {
@@ -411,9 +493,44 @@ func randomToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buffer), nil
 }
 
+func randomLoginCode() (string, error) {
+	number, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", number.Int64()), nil
+}
+
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func validEmail(email string) bool {
+	parsed, err := mail.ParseAddress(email)
+	return err == nil && parsed.Address == email && len(email) <= 254
+}
+
+func validLoginCode(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	for _, character := range code {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func hashToken(token string) string {
 	digest := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(digest[:])
+}
+
+func hashLoginCode(secret, email, code string) string {
+	digest := hmac.New(sha256.New, []byte(secret))
+	_, _ = digest.Write([]byte(email + "\x00" + code))
+	return hex.EncodeToString(digest.Sum(nil))
 }
 
 func clearCookie(w http.ResponseWriter, name string, secure bool) {

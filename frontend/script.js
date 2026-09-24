@@ -83,21 +83,37 @@ const preview = document.querySelector('#preview');
 const lessonButtons = document.querySelectorAll('.lesson');
 const resetButton = document.querySelector('#reset-button');
 const saveButton = document.querySelector('#save-button');
-const pageTitleInput = document.querySelector('#page-title-input');
+const pageSelect = document.querySelector('#page-select');
 const authButton = document.querySelector('#auth-button');
 const pagesButton = document.querySelector('#pages-button');
 const userEmail = document.querySelector('#user-email');
 const authDialog = document.querySelector('#auth-dialog');
+const saveDialog = document.querySelector('#save-dialog');
 const pagesDialog = document.querySelector('#pages-dialog');
 const authForm = document.querySelector('#auth-form');
+const authDescription = document.querySelector('#auth-description');
+const emailInput = document.querySelector('#email-input');
+const codeLabel = document.querySelector('#code-label');
+const codeInput = document.querySelector('#code-input');
+const authSubmit = document.querySelector('#auth-submit');
+const authBack = document.querySelector('#auth-back');
 const authMessage = document.querySelector('#auth-message');
+const saveForm = document.querySelector('#save-form');
+const saveCloseButton = saveDialog.querySelector('[data-close]');
+const pageNameInput = document.querySelector('#page-name-input');
+const saveMessage = document.querySelector('#save-message');
 const pagesMessage = document.querySelector('#pages-message');
 const savedPages = document.querySelector('#saved-pages');
 const toast = document.querySelector('#toast');
 
 let currentLesson = 'blank';
 let currentPageID = null;
+let currentPageTitle = 'Blank page';
 let signedInUser = null;
+let pendingEmail = '';
+let pageLoadGeneration = 0;
+let pageListGeneration = 0;
+let saveInProgress = false;
 let renderTimer;
 let tabExitsEditor = false;
 let toastTimer;
@@ -113,10 +129,13 @@ function schedulePreview() {
 
 function selectLesson(lessonName) {
   window.clearTimeout(renderTimer);
+  pageLoadGeneration++;
+  saveButton.disabled = false;
   currentLesson = lessonName;
   editor.value = lessons[lessonName];
   currentPageID = null;
-  pageTitleInput.value = lessonName === 'welcome' ? 'My first page' : document.querySelector(`[data-lesson="${lessonName}"] strong`).textContent;
+  currentPageTitle = lessonName === 'welcome' ? 'My first page' : document.querySelector(`[data-lesson="${lessonName}"] strong`).textContent;
+  pageSelect.value = 'new';
   lessonButtons.forEach((button) => {
     const isActive = button.dataset.lesson === lessonName;
     button.classList.toggle('active', isActive);
@@ -152,6 +171,14 @@ lessonButtons.forEach((button) => {
 
 resetButton.addEventListener('click', () => selectLesson(currentLesson));
 
+pageSelect.addEventListener('change', () => {
+  if (pageSelect.value === 'new') {
+    selectLesson('blank');
+    return;
+  }
+  openSavedPage(Number(pageSelect.value), false);
+});
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     ...options,
@@ -161,7 +188,6 @@ async function api(path, options = {}) {
   if (!response.ok) {
     const error = new Error(data.error || 'Something went wrong.');
     error.status = response.status;
-    if (response.status === 401) setSignedInUser(null);
     throw error;
   }
   return data;
@@ -169,22 +195,81 @@ async function api(path, options = {}) {
 
 function setSignedInUser(user) {
   signedInUser = user;
+  pageListGeneration++;
   const isSignedIn = Boolean(user);
   userEmail.hidden = !isSignedIn;
   pagesButton.hidden = !isSignedIn;
   userEmail.textContent = user?.email || '';
   authButton.textContent = isSignedIn ? 'Sign out' : 'Sign in';
+  if (!isSignedIn) {
+    currentPageID = null;
+    pageLoadGeneration++;
+    renderPageOptions([]);
+    savedPages.replaceChildren();
+    pagesMessage.textContent = '';
+    if (pagesDialog.open) pagesDialog.close();
+  }
+}
+
+function renderPageOptions(pages) {
+  pageSelect.replaceChildren();
+
+  const newPageOption = document.createElement('option');
+  newPageOption.value = 'new';
+  newPageOption.textContent = 'New page';
+  pageSelect.append(newPageOption);
+
+  pages.forEach((page) => {
+    const option = document.createElement('option');
+    option.value = String(page.id);
+    option.textContent = page.title;
+    pageSelect.append(option);
+  });
+
+  pageSelect.value = currentPageID === null ? 'new' : String(currentPageID);
+}
+
+function selectPageOption(page) {
+  pageListGeneration++;
+  let option = Array.from(pageSelect.options).find((item) => item.value === String(page.id));
+  if (!option) {
+    option = document.createElement('option');
+    pageSelect.insertBefore(option, pageSelect.options[1] || null);
+  }
+  option.value = String(page.id);
+  option.textContent = page.title;
+  pageSelect.value = option.value;
+}
+
+async function refreshPageOptions() {
+  if (!signedInUser) {
+    renderPageOptions([]);
+    return;
+  }
+  const user = signedInUser;
+  const generation = ++pageListGeneration;
+  const pages = await api('/api/pages');
+  if (signedInUser === user && pageListGeneration === generation) renderPageOptions(pages);
 }
 
 async function refreshAuth() {
+  const previousUser = signedInUser;
   try {
-    setSignedInUser(await api('/api/auth/me'));
-    if (new URLSearchParams(window.location.search).has('signed-in')) {
-      showToast('You’re signed in. Your pages can now be saved!');
-      window.history.replaceState({}, '', '/');
+    const user = await api('/api/auth/me');
+    if (signedInUser !== previousUser) return;
+    setSignedInUser(user);
+    try {
+      await refreshPageOptions();
+    } catch (error) {
+      if (!handleExpiredSession(error)) showToast(error.message);
     }
   } catch (error) {
-    if (error.status !== 401) showToast(error.message);
+    if (signedInUser !== previousUser) return;
+    if (error.status === 401) {
+      setSignedInUser(null);
+    } else {
+      showToast(error.message);
+    }
   }
 }
 
@@ -198,7 +283,42 @@ function showToast(message) {
 function showSignIn() {
   authMessage.textContent = '';
   authDialog.showModal();
-  document.querySelector('#email-input').focus();
+  (pendingEmail ? codeInput : emailInput).focus();
+}
+
+function handleExpiredSession(error) {
+  if (error.status !== 401) return false;
+  setSignedInUser(null);
+  showSignIn();
+  return true;
+}
+
+function showCodeEntry(email) {
+  pendingEmail = email;
+  emailInput.readOnly = true;
+  codeLabel.hidden = false;
+  codeInput.hidden = false;
+  codeInput.required = true;
+  authBack.hidden = false;
+  authSubmit.textContent = 'Verify code';
+  authDescription.textContent = `Enter the six-digit code sent to ${email}.`;
+  authMessage.textContent = '';
+  codeInput.value = '';
+  codeInput.focus();
+}
+
+function resetSignIn(focusEmail = true) {
+  pendingEmail = '';
+  emailInput.readOnly = false;
+  codeLabel.hidden = true;
+  codeInput.hidden = true;
+  codeInput.required = false;
+  codeInput.value = '';
+  authBack.hidden = true;
+  authSubmit.textContent = 'Email my sign-in code';
+  authDescription.textContent = 'Enter an email address. We’ll send you a six-digit sign-in code.';
+  authMessage.textContent = '';
+  if (focusEmail) emailInput.focus();
 }
 
 authButton.addEventListener('click', async () => {
@@ -218,60 +338,112 @@ authButton.addEventListener('click', async () => {
 
 authForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const button = authForm.querySelector('[type="submit"]');
-  button.disabled = true;
-  authMessage.textContent = 'Sending…';
+  authSubmit.disabled = true;
+  authMessage.textContent = pendingEmail ? 'Checking…' : 'Sending…';
   try {
-    await api('/api/auth/request', {
+    if (!pendingEmail) {
+      const email = emailInput.value.trim().toLowerCase();
+      await api('/api/auth/request', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+      showCodeEntry(email);
+      return;
+    }
+
+    const user = await api('/api/auth/verify', {
       method: 'POST',
-      body: JSON.stringify({ email: document.querySelector('#email-input').value })
+      body: JSON.stringify({ email: pendingEmail, code: codeInput.value })
     });
-    authMessage.textContent = 'Check your inbox and open the sign-in link. You can close this window.';
+    setSignedInUser(user);
+    authDialog.close();
+    resetSignIn(false);
+    showToast('You’re signed in. Your pages can now be saved!');
+    try {
+      await refreshPageOptions();
+    } catch (error) {
+      if (!handleExpiredSession(error)) showToast(`Signed in, but pages could not be loaded: ${error.message}`);
+    }
   } catch (error) {
     authMessage.textContent = error.message;
   } finally {
-    button.disabled = false;
+    authSubmit.disabled = false;
   }
 });
 
-saveButton.addEventListener('click', async () => {
+authBack.addEventListener('click', resetSignIn);
+
+saveButton.addEventListener('click', () => {
   if (!signedInUser) {
     showSignIn();
     return;
   }
-  const payload = { title: pageTitleInput.value.trim(), content: editor.value };
-  if (!payload.title) {
-    pageTitleInput.focus();
-    showToast('Give your page a title first.');
+
+  saveMessage.textContent = '';
+  pageNameInput.value = currentPageTitle;
+  saveDialog.showModal();
+  pageNameInput.focus();
+  pageNameInput.select();
+});
+
+saveForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const title = pageNameInput.value.trim();
+  if (!title) {
+    pageNameInput.focus();
+    saveMessage.textContent = 'Enter a page name.';
     return;
   }
-  saveButton.disabled = true;
+
+  const submitButton = saveForm.querySelector('[type="submit"]');
+  const pageID = currentPageID;
+  const content = editor.value;
+  saveInProgress = true;
+  submitButton.disabled = true;
+  saveCloseButton.disabled = true;
+  saveMessage.textContent = 'Saving…';
   try {
-    const page = await api(currentPageID ? `/api/pages/${currentPageID}` : '/api/pages', {
-      method: currentPageID ? 'PUT' : 'POST',
-      body: JSON.stringify(payload)
+    const page = await api(pageID ? `/api/pages/${pageID}` : '/api/pages', {
+      method: pageID ? 'PUT' : 'POST',
+      body: JSON.stringify({ title, content })
     });
     currentPageID = page.id;
+    currentPageTitle = page.title;
+    selectPageOption(page);
+    saveDialog.close();
     showToast('Page saved!');
   } catch (error) {
     if (error.status === 401) {
-      showSignIn();
+      saveDialog.close();
+      handleExpiredSession(error);
     } else {
-      showToast(error.message);
+      saveMessage.textContent = error.message;
     }
   } finally {
-    saveButton.disabled = false;
+    saveInProgress = false;
+    submitButton.disabled = false;
+    saveCloseButton.disabled = false;
   }
+});
+
+saveDialog.addEventListener('cancel', (event) => {
+  if (saveInProgress) event.preventDefault();
 });
 
 pagesButton.addEventListener('click', async () => {
   pagesDialog.showModal();
   pagesMessage.textContent = 'Loading…';
+  const user = signedInUser;
+  const generation = ++pageListGeneration;
   try {
-    renderSavedPages(await api('/api/pages'));
+    const pages = await api('/api/pages');
+    if (signedInUser !== user || pageListGeneration !== generation) return;
+    renderSavedPages(pages);
+    renderPageOptions(pages);
     pagesMessage.textContent = '';
   } catch (error) {
-    pagesMessage.textContent = error.message;
+    if (signedInUser !== user) return;
+    if (!handleExpiredSession(error)) pagesMessage.textContent = error.message;
   }
 });
 
@@ -306,17 +478,30 @@ function renderSavedPages(pages) {
   });
 }
 
-async function openSavedPage(id) {
+async function openSavedPage(id, closeDialog = true) {
+  const loadGeneration = ++pageLoadGeneration;
+  saveButton.disabled = true;
   try {
     const page = await api(`/api/pages/${id}`);
+    if (loadGeneration !== pageLoadGeneration) return;
     currentPageID = page.id;
-    pageTitleInput.value = page.title;
+    currentPageTitle = page.title;
+    pageSelect.value = String(page.id);
     editor.value = page.content;
     renderPreview();
-    pagesDialog.close();
+    if (closeDialog) pagesDialog.close();
     showToast('Page opened.');
   } catch (error) {
-    pagesMessage.textContent = error.message;
+    if (loadGeneration !== pageLoadGeneration) return;
+    if (handleExpiredSession(error)) return;
+    if (closeDialog) {
+      pagesMessage.textContent = error.message;
+    } else {
+      pageSelect.value = currentPageID === null ? 'new' : String(currentPageID);
+      showToast(error.message);
+    }
+  } finally {
+    if (loadGeneration === pageLoadGeneration) saveButton.disabled = false;
   }
 }
 
@@ -324,11 +509,13 @@ async function deleteSavedPage(id, title, row) {
   if (!window.confirm(`Delete “${title}”?`)) return;
   try {
     await api(`/api/pages/${id}`, { method: 'DELETE' });
+    pageListGeneration++;
     row.remove();
-    if (currentPageID === id) currentPageID = null;
+    pageSelect.querySelector(`option[value="${id}"]`)?.remove();
+    if (currentPageID === id) selectLesson('blank');
     if (savedPages.children.length === 0) renderSavedPages([]);
   } catch (error) {
-    pagesMessage.textContent = error.message;
+    if (!handleExpiredSession(error)) pagesMessage.textContent = error.message;
   }
 }
 

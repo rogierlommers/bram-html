@@ -13,15 +13,15 @@ import (
 )
 
 type Mailer interface {
-	SendMagicLink(ctx context.Context, email, link string) error
+	SendLoginCode(ctx context.Context, email, code string) error
 }
 
 type LogMailer struct {
 	Logger *logrus.Entry
 }
 
-func (m LogMailer) SendMagicLink(_ context.Context, email, link string) error {
-	m.Logger.Printf("development magic link for %s: %s", email, link)
+func (m LogMailer) SendLoginCode(_ context.Context, email, code string) error {
+	m.Logger.Printf("development login code for %s: %s", email, code)
 	return nil
 }
 
@@ -33,7 +33,7 @@ type SMTPMailer struct {
 	From     string
 }
 
-func (m SMTPMailer) SendMagicLink(ctx context.Context, email, link string) error {
+func (m SMTPMailer) SendLoginCode(ctx context.Context, email, code string) error {
 	address := net.JoinHostPort(m.Host, m.Port)
 	dialer := net.Dialer{Timeout: 10 * time.Second}
 	connection, err := dialer.DialContext(ctx, "tcp", address)
@@ -85,7 +85,7 @@ func (m SMTPMailer) SendMagicLink(ctx context.Context, email, link string) error
 	if err != nil {
 		return err
 	}
-	message := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: Sign in to bram-html\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nOpen this one-time link to sign in to bram-html:\r\n\r\n%s\r\n", m.From, email, link)
+	message := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: Your bram-html sign-in code\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nYour one-time sign-in code is:\r\n\r\n%s\r\n", m.From, email, code)
 	if _, err := io.WriteString(writer, message); err != nil {
 		_ = writer.Close()
 		return err
