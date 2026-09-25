@@ -39,6 +39,10 @@ jobs:
       - name: Test with coverage
         run: go test ./... -coverprofile=coverage.out
 
+      - name: Test frontend
+        working-directory: frontend
+        run: node --test script.test.js
+
       - name: Generate coverage reports
         run: |
           go tool cover -func=coverage.out | tee coverage.txt

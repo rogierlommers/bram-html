@@ -100,6 +100,9 @@
         <label class="field-label" id="code-label" for="code-input" hidden>Sign-in code</label>
         <input class="field-input" id="code-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" hidden />
         <button class="modal-action" id="auth-submit" type="submit">Email my sign-in code</button>
+        <div class="auth-progress" id="auth-progress" role="progressbar" aria-label="Sending sign-in email" hidden>
+          <span></span>
+        </div>
         <button class="text-button" id="auth-back" type="button" hidden>Use another email</button>
         <p class="form-message" id="auth-message" role="status"></p>
       </form>

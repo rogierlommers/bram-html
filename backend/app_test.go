@@ -7,9 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/mail"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -607,6 +611,52 @@ func TestInvalidEmailDoesNotCreateLoginCode(t *testing.T) {
 	}
 	if mailer.code != "" {
 		t.Fatal("invalid email sent a login code")
+	}
+}
+
+func TestLoginCodeMessageIncludesHTMLAndPlainText(t *testing.T) {
+	message := loginCodeMessage("bram-html@example.com", "kid@example.com", "123456")
+	if strings.Contains(strings.ReplaceAll(message, "\r\n", ""), "\n") {
+		t.Error("login email contains a line feed without a carriage return")
+	}
+
+	parsed, err := mail.ReadMessage(strings.NewReader(message))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mediaType, parameters, err := mime.ParseMediaType(parsed.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mediaType != "multipart/alternative" {
+		t.Fatalf("Content-Type = %q, want multipart/alternative", mediaType)
+	}
+
+	reader := multipart.NewReader(parsed.Body, parameters["boundary"])
+	for index, expectedType := range []string{"text/plain", "text/html"} {
+		part, err := reader.NextPart()
+		if err != nil {
+			t.Fatalf("part %d: %v", index, err)
+		}
+		partType, _, err := mime.ParseMediaType(part.Header.Get("Content-Type"))
+		if err != nil {
+			t.Fatalf("part %d Content-Type: %v", index, err)
+		}
+		if partType != expectedType {
+			t.Errorf("part %d Content-Type = %q, want %q", index, partType, expectedType)
+		}
+		body, err := io.ReadAll(part)
+		if err != nil {
+			t.Fatalf("part %d body: %v", index, err)
+		}
+		for _, expected := range []string{"123456", "This code expires soon"} {
+			if !bytes.Contains(body, []byte(expected)) {
+				t.Errorf("part %d does not contain %q", index, expected)
+			}
+		}
+	}
+	if _, err := reader.NextPart(); err != io.EOF {
+		t.Fatalf("unexpected extra MIME part: %v", err)
 	}
 }
 

@@ -97,6 +97,7 @@ const emailInput = document.querySelector('#email-input');
 const codeLabel = document.querySelector('#code-label');
 const codeInput = document.querySelector('#code-input');
 const authSubmit = document.querySelector('#auth-submit');
+const authProgress = document.querySelector('#auth-progress');
 const authBack = document.querySelector('#auth-back');
 const authMessage = document.querySelector('#auth-message');
 const saveForm = document.querySelector('#save-form');
@@ -112,6 +113,7 @@ let currentPageID = null;
 let currentPageTitle = 'Blank page';
 let signedInUser = null;
 let pendingEmail = '';
+let authInProgress = false;
 let pageLoadGeneration = 0;
 let pageListGeneration = 0;
 let saveInProgress = false;
@@ -341,8 +343,14 @@ authButton.addEventListener('click', async () => {
 
 authForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (authInProgress) return;
+  authInProgress = true;
+  const sendingEmail = !pendingEmail;
   authSubmit.disabled = true;
-  authMessage.textContent = pendingEmail ? 'Checking…' : 'Sending…';
+  authSubmit.textContent = sendingEmail ? 'Sending email…' : 'Checking…';
+  authProgress.hidden = !sendingEmail;
+  authForm.setAttribute('aria-busy', 'true');
+  authMessage.textContent = sendingEmail ? 'Sending your sign-in code…' : 'Checking…';
   try {
     if (!pendingEmail) {
       const email = emailInput.value.trim().toLowerCase();
@@ -371,7 +379,11 @@ authForm.addEventListener('submit', async (event) => {
   } catch (error) {
     authMessage.textContent = error.message;
   } finally {
+    authInProgress = false;
     authSubmit.disabled = false;
+    authSubmit.textContent = pendingEmail ? 'Verify code' : 'Email my sign-in code';
+    authProgress.hidden = true;
+    authForm.removeAttribute('aria-busy');
   }
 });
 

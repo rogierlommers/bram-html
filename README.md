@@ -52,9 +52,12 @@ SMTP delivery requires STARTTLS so that sign-in codes are never sent to the mail
 ```sh
 cd backend
 go test ./...
+
+cd ../frontend
+node --test script.test.js
 ```
 
-The integration tests exercise one-time sign-in codes, session cookies, authentication requirements, and the complete saved-page lifecycle.
+The tests exercise one-time sign-in codes, session cookies, authentication requirements, the complete saved-page lifecycle, and sign-in form behavior.
 
 ## Docker
 
