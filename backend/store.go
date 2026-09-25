@@ -47,9 +47,18 @@ type DailyActivity struct {
 	ActiveUsers  int    `json:"activeUsers"`
 }
 
+type AdminPage struct {
+	ID         int64     `json:"id"`
+	Title      string    `json:"title"`
+	OwnerEmail string    `json:"ownerEmail"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
 type AdminStats struct {
 	Summary  AdminSummary    `json:"summary"`
 	Activity []DailyActivity `json:"activity"`
+	Pages    []AdminPage     `json:"pages"`
 }
 
 type Store struct {
@@ -125,6 +134,7 @@ CREATE TABLE IF NOT EXISTS pages (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pages_user_updated ON pages(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pages_updated ON pages(updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_pages_created ON pages(created_at);
 
 CREATE TABLE IF NOT EXISTS user_activity (
@@ -362,7 +372,7 @@ ON CONFLICT(user_id, activity_date) DO NOTHING`, userID, now.UTC().Format(time.D
 }
 
 func (s *Store) AdminStats(ctx context.Context, now time.Time, days int, onlineWindow time.Duration) (AdminStats, error) {
-	stats := AdminStats{Activity: make([]DailyActivity, days)}
+	stats := AdminStats{Activity: make([]DailyActivity, days), Pages: make([]AdminPage, 0)}
 	start := now.UTC().Truncate(24*time.Hour).AddDate(0, 0, -(days - 1))
 	byDate := make(map[string]*DailyActivity, days)
 	for index := range stats.Activity {
@@ -414,6 +424,27 @@ func (s *Store) AdminStats(ctx context.Context, now time.Time, days int, onlineW
 		if err := rows.Close(); err != nil {
 			return AdminStats{}, err
 		}
+	}
+
+	rows, err := s.db.QueryContext(ctx, `SELECT pages.id, pages.title, users.email, pages.created_at, pages.updated_at
+FROM pages JOIN users ON users.id = pages.user_id
+ORDER BY pages.updated_at DESC, pages.id DESC`)
+	if err != nil {
+		return AdminStats{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var page AdminPage
+		var createdAt, updatedAt int64
+		if err := rows.Scan(&page.ID, &page.Title, &page.OwnerEmail, &createdAt, &updatedAt); err != nil {
+			return AdminStats{}, err
+		}
+		page.CreatedAt = time.Unix(createdAt, 0).UTC()
+		page.UpdatedAt = time.Unix(updatedAt, 0).UTC()
+		stats.Pages = append(stats.Pages, page)
+	}
+	if err := rows.Err(); err != nil {
+		return AdminStats{}, err
 	}
 	return stats, nil
 }

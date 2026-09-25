@@ -66,6 +66,12 @@ func TestAdminStatisticsRequireAdminAndReportActivity(t *testing.T) {
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("record user activity: got %d: %s", response.Code, response.Body.String())
 	}
+	response = requestJSON(t, app.Handler(), http.MethodPost, "/api/pages", map[string]string{
+		"title": "Kid page", "content": "<h1>Hello</h1>",
+	}, userCookie)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create user page: got %d: %s", response.Code, response.Body.String())
+	}
 
 	response = requestJSON(t, app.Handler(), http.MethodGet, "/api/admin/stats", nil, nil)
 	if response.Code != http.StatusUnauthorized {
@@ -89,6 +95,9 @@ func TestAdminStatisticsRequireAdminAndReportActivity(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("create admin page: got %d: %s", response.Code, response.Body.String())
 	}
+	if _, err := app.store.db.Exec(`UPDATE pages SET updated_at = CASE title WHEN 'Kid page' THEN 200 WHEN 'Admin page' THEN 100 END`); err != nil {
+		t.Fatal(err)
+	}
 
 	response = requestJSON(t, app.Handler(), http.MethodGet, "/api/admin/stats", nil, adminCookie)
 	if response.Code != http.StatusOK {
@@ -106,15 +115,50 @@ func TestAdminStatisticsRequireAdminAndReportActivity(t *testing.T) {
 			PagesCreated int    `json:"pagesCreated"`
 			ActiveUsers  int    `json:"activeUsers"`
 		} `json:"activity"`
+		Pages []struct {
+			ID         int64     `json:"id"`
+			Title      string    `json:"title"`
+			OwnerEmail string    `json:"ownerEmail"`
+			CreatedAt  time.Time `json:"createdAt"`
+			UpdatedAt  time.Time `json:"updatedAt"`
+		} `json:"pages"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+	responseBody := response.Body.Bytes()
+	if err := json.NewDecoder(bytes.NewReader(responseBody)).Decode(&payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Summary.TotalUsers != 2 || payload.Summary.TotalPages != 1 || payload.Summary.OnlineUsers != 2 {
+	if payload.Summary.TotalUsers != 2 || payload.Summary.TotalPages != 2 || payload.Summary.OnlineUsers != 2 {
 		t.Fatalf("unexpected summary: %#v", payload.Summary)
 	}
 	if len(payload.Activity) != 30 {
 		t.Fatalf("activity days = %d, want 30", len(payload.Activity))
+	}
+	if len(payload.Pages) != 2 {
+		t.Fatalf("admin pages = %d, want 2", len(payload.Pages))
+	}
+	if payload.Pages[0].Title != "Kid page" || payload.Pages[1].Title != "Admin page" {
+		t.Fatalf("admin pages are not ordered by most recent update: %#v", payload.Pages)
+	}
+	owners := map[string]string{}
+	for _, page := range payload.Pages {
+		owners[page.Title] = page.OwnerEmail
+		if page.ID == 0 || page.CreatedAt.IsZero() || page.UpdatedAt.IsZero() {
+			t.Fatalf("admin page is missing metadata: %#v", page)
+		}
+	}
+	if owners["Kid page"] != "kid@example.com" || owners["Admin page"] != "admin@example.com" {
+		t.Fatalf("unexpected admin page owners: %#v", owners)
+	}
+	var rawPayload struct {
+		Pages []map[string]json.RawMessage `json:"pages"`
+	}
+	if err := json.Unmarshal(responseBody, &rawPayload); err != nil {
+		t.Fatal(err)
+	}
+	for _, page := range rawPayload.Pages {
+		if _, exposed := page["content"]; exposed {
+			t.Fatal("admin page overview exposed page content")
+		}
 	}
 }
 

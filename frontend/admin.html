@@ -51,6 +51,25 @@
           </div>
           <div class="activity-chart" id="activity-chart"></div>
         </section>
+
+        <section class="activity-card pages-card" aria-labelledby="pages-overview-title">
+          <div class="activity-header">
+            <div>
+              <h2 id="pages-overview-title">All saved pages</h2>
+              <p>Every page saved by a bram-html user, most recently updated first.</p>
+            </div>
+            <span class="pages-count" id="pages-count">0 pages</span>
+          </div>
+          <div class="admin-pages-wrap">
+            <table class="admin-pages-table">
+              <caption class="sr-only">Saved pages and their owners</caption>
+              <thead>
+                <tr><th scope="col">Page</th><th scope="col">Owner</th><th scope="col">Created</th><th scope="col">Updated</th></tr>
+              </thead>
+              <tbody id="admin-pages"></tbody>
+            </table>
+          </div>
+        </section>
       </div>
     </main>
     <script src="/admin.js"></script>

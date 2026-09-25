@@ -54,7 +54,7 @@ cd backend
 go test ./...
 
 cd ../frontend
-node --test script.test.js
+node --test *.test.js
 ```
 
 The tests exercise one-time sign-in codes, session cookies, authentication requirements, the complete saved-page lifecycle, and sign-in form behavior.

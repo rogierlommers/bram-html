@@ -379,6 +379,16 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--blue); outline-
 .chart-line.pages { stroke: #d79a12; }
 .admin-state { padding: 64px 24px; border: 2px dashed var(--line); border-radius: 18px; color: var(--muted); background: rgba(255, 255, 255, 0.55); text-align: center; }
 .admin-state a { color: var(--blue); font-weight: 900; }
+.pages-card { margin-top: 18px; }
+.pages-count { padding: 7px 11px; border-radius: 999px; color: #295da9; background: #edf4ff; font-size: 0.76rem; font-weight: 900; white-space: nowrap; }
+.admin-pages-wrap { margin-top: 20px; overflow-x: auto; }
+.admin-pages-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; text-align: left; }
+.admin-pages-table th, .admin-pages-table td { padding: 13px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.admin-pages-table thead th { color: var(--muted); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.admin-pages-table tbody th { min-width: 180px; font-weight: 900; }
+.admin-pages-table td { min-width: 150px; color: var(--muted); }
+.admin-pages-table tbody tr:last-child > * { border-bottom: 0; }
+.admin-pages-empty { padding-block: 28px !important; text-align: center; }
 
 @media (max-width: 700px) {
   .admin-main { padding-top: 32px; }

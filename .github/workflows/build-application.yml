@@ -41,7 +41,7 @@ jobs:
 
       - name: Test frontend
         working-directory: frontend
-        run: node --test script.test.js
+        run: node --test *.test.js
 
       - name: Generate coverage reports
         run: |

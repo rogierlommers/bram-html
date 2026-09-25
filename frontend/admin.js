@@ -2,6 +2,7 @@ const state = document.querySelector('#admin-state');
 const dashboard = document.querySelector('#admin-dashboard');
 const onlinePill = document.querySelector('#online-pill');
 const numberFormatter = new Intl.NumberFormat();
+const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 async function api(path, options = {}) {
   const headers = new Headers(options.headers);
@@ -71,12 +72,49 @@ function renderChart(activity) {
   document.querySelector('#activity-chart').replaceChildren(svg);
 }
 
+function formatDate(value) {
+  return dateFormatter.format(new Date(value));
+}
+
+function renderPages(pages) {
+  const body = document.querySelector('#admin-pages');
+  document.querySelector('#pages-count').textContent = `${numberFormatter.format(pages.length)} ${pages.length === 1 ? 'page' : 'pages'}`;
+  body.replaceChildren();
+
+  if (pages.length === 0) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 4;
+    cell.className = 'admin-pages-empty';
+    cell.textContent = 'No pages have been saved yet.';
+    row.append(cell);
+    body.append(row);
+    return;
+  }
+
+  pages.forEach((page) => {
+    const row = document.createElement('tr');
+    const title = document.createElement('th');
+    title.scope = 'row';
+    title.textContent = page.title;
+    const owner = document.createElement('td');
+    owner.textContent = page.ownerEmail;
+    const created = document.createElement('td');
+    created.textContent = formatDate(page.createdAt);
+    const updated = document.createElement('td');
+    updated.textContent = formatDate(page.updatedAt);
+    row.append(title, owner, created, updated);
+    body.append(row);
+  });
+}
+
 function renderStatistics(stats) {
   setText('#total-users', stats.summary.totalUsers);
   setText('#total-pages', stats.summary.totalPages);
   setText('#online-users', stats.summary.onlineUsers);
   setText('#online-count', stats.summary.onlineUsers);
   renderChart(stats.activity);
+  renderPages(stats.pages);
   state.hidden = true;
   dashboard.hidden = false;
   onlinePill.hidden = false;
