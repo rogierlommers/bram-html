@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -55,6 +57,7 @@ type Config struct {
 	LoginCodeSecret   string
 	StaticDir         string
 	AdminEmails       []string
+	Logger            *logrus.Entry
 }
 
 type App struct {
@@ -67,6 +70,8 @@ type App struct {
 	loginVerifyLimiter  *requestLimiter
 	loginCodeSecret     string
 	adminEmails         map[string]struct{}
+	adminRecipients     []string
+	logger              *logrus.Entry
 }
 
 type userContextKey struct{}
@@ -128,6 +133,7 @@ func NewApp(store *Store, mailer Mailer, config Config) (*App, error) {
 	}
 	config.BaseURL = strings.TrimRight(baseURL.String(), "/")
 	adminEmails := make(map[string]struct{}, len(config.AdminEmails))
+	adminRecipients := make([]string, 0, len(config.AdminEmails))
 	for _, email := range config.AdminEmails {
 		normalized := normalizeEmail(email)
 		if normalized == "" {
@@ -136,7 +142,10 @@ func NewApp(store *Store, mailer Mailer, config Config) (*App, error) {
 		if !validEmail(normalized) {
 			return nil, fmt.Errorf("ADMIN_EMAILS contains an invalid email address: %q", email)
 		}
-		adminEmails[normalized] = struct{}{}
+		if _, exists := adminEmails[normalized]; !exists {
+			adminEmails[normalized] = struct{}{}
+			adminRecipients = append(adminRecipients, normalized)
+		}
 	}
 	app := &App{
 		store: store, mailer: mailer, config: config, cookieSecure: baseURL.Scheme == "https",
@@ -144,6 +153,8 @@ func NewApp(store *Store, mailer Mailer, config Config) (*App, error) {
 		loginVerifyLimiter:  newRequestLimiter(config.VerifyPerIPLimit, config.VerifyGlobalLimit),
 		loginCodeSecret:     config.LoginCodeSecret,
 		adminEmails:         adminEmails,
+		adminRecipients:     adminRecipients,
+		logger:              config.Logger,
 	}
 	app.handler = app.routes()
 	return app, nil
@@ -173,8 +184,10 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("PUT /api/pages/{id}", a.withUser(a.updatePage))
 	mux.HandleFunc("DELETE /api/pages/{id}", a.withUser(a.deletePage))
 	mux.HandleFunc("GET /api/admin/stats", a.withUser(a.withAdmin(a.adminStats)))
+	mux.HandleFunc("GET /api/admin/pages/{id}", a.withUser(a.withAdmin(a.adminPageDetail)))
 	mux.HandleFunc("GET /admin", a.withUser(a.withAdmin(a.adminPage)))
 	mux.HandleFunc("GET /admin.html", a.withUser(a.withAdmin(a.adminPage)))
+	mux.HandleFunc("GET /admin/pages/{id}", a.withUser(a.withAdmin(a.adminPagePreview)))
 
 	mux.Handle("/", http.FileServer(http.Dir(a.config.StaticDir)))
 	return securityHeaders(mux)
@@ -395,6 +408,31 @@ func (a *App) adminPage(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filepath.Join(a.config.StaticDir, "admin.html"))
 }
 
+func (a *App) adminPagePreview(w http.ResponseWriter, r *http.Request) {
+	if _, ok := parsePageID(w, r); !ok {
+		return
+	}
+	http.ServeFile(w, r, filepath.Join(a.config.StaticDir, "admin-page.html"))
+}
+
+func (a *App) adminPageDetail(w http.ResponseWriter, r *http.Request) {
+	id, ok := parsePageID(w, r)
+	if !ok {
+		return
+	}
+	page, err := a.store.GetPageForAdmin(r.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		writeError(w, http.StatusNotFound, "page not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load page")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, page)
+}
+
 func (a *App) logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(a.config.CookieName); err == nil {
 		_ = a.store.DeleteSession(r.Context(), hashToken(cookie.Value))
@@ -431,6 +469,7 @@ func (a *App) createPage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not save page")
 		return
 	}
+	a.notifyPageSaved(currentUser(r), page, false)
 	writeJSON(w, http.StatusCreated, page)
 }
 
@@ -444,7 +483,37 @@ func (a *App) updatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page, err := a.store.UpdatePage(r.Context(), currentUser(r).ID, id, title, content)
-	writePageResult(w, page, err)
+	if errors.Is(err, ErrNotFound) {
+		writeError(w, http.StatusNotFound, "page not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not save page")
+		return
+	}
+	a.notifyPageSaved(currentUser(r), page, true)
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (a *App) notifyPageSaved(user User, page Page, updated bool) {
+	if len(a.adminRecipients) == 0 {
+		return
+	}
+	mailer := a.mailer
+	recipients := append([]string(nil), a.adminRecipients...)
+	notification := PageSavedNotification{
+		OwnerEmail: user.Email,
+		PageTitle:  page.Title,
+		PageURL:    fmt.Sprintf("%s/admin/pages/%d", a.config.BaseURL, page.ID),
+		Updated:    updated,
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := mailer.SendPageSaved(ctx, recipients, notification); err != nil && a.logger != nil {
+			a.logger.WithError(err).WithField("page_id", page.ID).Warn("could not send page saved notification")
+		}
+	}()
 }
 
 func (a *App) deletePage(w http.ResponseWriter, r *http.Request) {

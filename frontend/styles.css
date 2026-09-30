@@ -386,9 +386,17 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--blue); outline-
 .admin-pages-table th, .admin-pages-table td { padding: 13px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .admin-pages-table thead th { color: var(--muted); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; }
 .admin-pages-table tbody th { min-width: 180px; font-weight: 900; }
+.admin-pages-table tbody th a { color: var(--ink); text-decoration-color: var(--blue); text-underline-offset: 3px; }
+.admin-pages-table tbody th a:hover { color: var(--blue); }
 .admin-pages-table td { min-width: 150px; color: var(--muted); }
 .admin-pages-table tbody tr:last-child > * { border-bottom: 0; }
 .admin-pages-empty { padding-block: 28px !important; text-align: center; }
+.admin-page-main { padding: 48px 0 64px; }
+.admin-page-heading { margin-bottom: 24px; }
+.admin-page-heading h1 { font-size: clamp(2rem, 4vw, 3.2rem); }
+.admin-page-heading p:not(.eyebrow) { margin: 12px 0 0; color: var(--muted); }
+.admin-preview-card { overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: var(--shadow); }
+#page-preview { display: block; width: 100%; min-height: 70vh; border: 0; background: white; }
 
 @media (max-width: 700px) {
   .admin-main { padding-top: 32px; }

@@ -19,12 +19,17 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 type captureMailer struct {
-	code string
+	mu            sync.Mutex
+	code          string
+	notifications []PageSavedNotification
+	recipients    [][]string
+	notification  chan struct{}
 }
 
 func (m *captureMailer) SendLoginCode(_ context.Context, _, code string) error {
@@ -32,10 +37,70 @@ func (m *captureMailer) SendLoginCode(_ context.Context, _, code string) error {
 	return nil
 }
 
+func (m *captureMailer) SendPageSaved(_ context.Context, recipients []string, notification PageSavedNotification) error {
+	m.mu.Lock()
+	m.notifications = append(m.notifications, notification)
+	m.recipients = append(m.recipients, append([]string(nil), recipients...))
+	signal := m.notification
+	m.mu.Unlock()
+	if signal != nil {
+		select {
+		case signal <- struct{}{}:
+		default:
+		}
+	}
+	return nil
+}
+
+func waitForNotifications(t *testing.T, mailer *captureMailer, count int) ([]PageSavedNotification, [][]string) {
+	t.Helper()
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	for {
+		mailer.mu.Lock()
+		if len(mailer.notifications) >= count {
+			notifications := append([]PageSavedNotification(nil), mailer.notifications...)
+			recipients := append([][]string(nil), mailer.recipients...)
+			mailer.mu.Unlock()
+			return notifications, recipients
+		}
+		if mailer.notification == nil {
+			mailer.notification = make(chan struct{}, 1)
+		}
+		signal := mailer.notification
+		mailer.mu.Unlock()
+		select {
+		case <-signal:
+		case <-timer.C:
+			mailer.mu.Lock()
+			actual := len(mailer.notifications)
+			mailer.mu.Unlock()
+			t.Fatalf("notifications = %d, want at least %d", actual, count)
+		}
+	}
+}
+
 type failingMailer struct{}
 
 func (failingMailer) SendLoginCode(context.Context, string, string) error {
 	return errors.New("mail server unavailable")
+}
+
+func (failingMailer) SendPageSaved(context.Context, []string, PageSavedNotification) error {
+	return errors.New("mail server unavailable")
+}
+
+type blockingNotificationMailer struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (m *blockingNotificationMailer) SendLoginCode(context.Context, string, string) error { return nil }
+
+func (m *blockingNotificationMailer) SendPageSaved(context.Context, []string, PageSavedNotification) error {
+	close(m.started)
+	<-m.release
+	return nil
 }
 
 func newTestApp(t *testing.T) (*App, *captureMailer) {
@@ -228,6 +293,106 @@ func TestAdminPagesRequireAdmin(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestPageSaveDoesNotWaitForAdminNotification(t *testing.T) {
+	app, mailer := newTestApp(t)
+	userCookie := authenticate(t, app, mailer)
+	blocking := &blockingNotificationMailer{started: make(chan struct{}), release: make(chan struct{})}
+	app.mailer = blocking
+
+	responses := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		responses <- requestJSON(t, app.Handler(), http.MethodPost, "/api/pages", map[string]string{
+			"title": "Async notification", "content": "<p>Saved immediately</p>",
+		}, userCookie)
+	}()
+
+	var response *httptest.ResponseRecorder
+	select {
+	case response = <-responses:
+	case <-time.After(time.Second):
+		close(blocking.release)
+		t.Fatal("page save waited for the admin notification")
+	}
+	if response.Code != http.StatusCreated {
+		close(blocking.release)
+		t.Fatalf("create page: got %d: %s", response.Code, response.Body.String())
+	}
+	select {
+	case <-blocking.started:
+	case <-time.After(time.Second):
+		close(blocking.release)
+		t.Fatal("admin notification did not start")
+	}
+	close(blocking.release)
+}
+
+func TestPageSavesNotifyAdminsAndAdminsCanViewEveryPage(t *testing.T) {
+	app, mailer := newTestApp(t)
+	userCookie := authenticate(t, app, mailer)
+
+	response := requestJSON(t, app.Handler(), http.MethodPost, "/api/pages", map[string]string{
+		"title": "Kid page", "content": "<h1>Hello admin</h1>",
+	}, userCookie)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create page: got %d: %s", response.Code, response.Body.String())
+	}
+	var page Page
+	if err := json.NewDecoder(response.Body).Decode(&page); err != nil {
+		t.Fatal(err)
+	}
+	notifications, recipients := waitForNotifications(t, mailer, 1)
+	created := notifications[0]
+	if len(recipients) != 1 || len(recipients[0]) != 1 || recipients[0][0] != "admin@example.com" {
+		t.Fatalf("unexpected notification recipients: %#v", recipients)
+	}
+	if created.OwnerEmail != "kid@example.com" || created.PageTitle != "Kid page" || created.Updated || created.PageURL != fmt.Sprintf("http://example.com/admin/pages/%d", page.ID) {
+		t.Fatalf("unexpected create notification: %#v", created)
+	}
+
+	response = requestJSON(t, app.Handler(), http.MethodPut, "/api/pages/"+strconv.FormatInt(page.ID, 10), map[string]string{
+		"title": "Kid page updated", "content": "<h1>Updated</h1>",
+	}, userCookie)
+	if response.Code != http.StatusOK {
+		t.Fatalf("update page: got %d: %s", response.Code, response.Body.String())
+	}
+	notifications, _ = waitForNotifications(t, mailer, 2)
+	if !notifications[1].Updated || notifications[1].PageTitle != "Kid page updated" {
+		t.Fatalf("unexpected update notifications: %#v", notifications)
+	}
+	app.mailer = failingMailer{}
+	response = requestJSON(t, app.Handler(), http.MethodPost, "/api/pages", map[string]string{
+		"title": "Saved despite mail failure", "content": "<p>Still saved</p>",
+	}, userCookie)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("save with failed admin notification: got %d: %s", response.Code, response.Body.String())
+	}
+
+	response = requestJSON(t, app.Handler(), http.MethodGet, "/api/admin/pages/"+strconv.FormatInt(page.ID, 10), nil, userCookie)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("non-admin page view: got %d, want %d", response.Code, http.StatusForbidden)
+	}
+
+	adminMailer := &captureMailer{}
+	app.mailer = adminMailer
+	adminCookie := authenticateAs(t, app, adminMailer, "admin@example.com")
+	response = requestJSON(t, app.Handler(), http.MethodGet, "/api/admin/pages/"+strconv.FormatInt(page.ID, 10), nil, adminCookie)
+	if response.Code != http.StatusOK {
+		t.Fatalf("admin page view: got %d: %s", response.Code, response.Body.String())
+	}
+	var detail AdminPageDetail
+	if err := json.NewDecoder(response.Body).Decode(&detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.OwnerEmail != "kid@example.com" || detail.Content != "<h1>Updated</h1>" {
+		t.Fatalf("unexpected admin page detail: %#v", detail)
+	}
+
+	response = requestJSON(t, app.Handler(), http.MethodGet, "/admin/pages/"+strconv.FormatInt(page.ID, 10), nil, adminCookie)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Saved page preview") {
+		t.Fatalf("admin preview page: got %d: %s", response.Code, response.Body.String())
 	}
 }
 
@@ -701,6 +866,25 @@ func TestLoginCodeMessageIncludesHTMLAndPlainText(t *testing.T) {
 	}
 	if _, err := reader.NextPart(); err != io.EOF {
 		t.Fatalf("unexpected extra MIME part: %v", err)
+	}
+}
+
+func TestPageSavedMessageIncludesEscapedHTMLAndDirectLink(t *testing.T) {
+	message := pageSavedMessage("bram-html@example.com", []string{"admin@example.com"}, PageSavedNotification{
+		OwnerEmail: "kid@example.com",
+		PageTitle:  "Cats & <dogs>",
+		PageURL:    "https://example.com/admin/pages/42",
+	})
+	for _, expected := range []string{
+		"To: admin@example.com",
+		"Content-Type: multipart/alternative;",
+		"Cats &amp; &lt;dogs&gt;",
+		`href="https://example.com/admin/pages/42"`,
+		"View the saved page: https://example.com/admin/pages/42",
+	} {
+		if !strings.Contains(message, expected) {
+			t.Errorf("page saved email does not contain %q", expected)
+		}
 	}
 }
 

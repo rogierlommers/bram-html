@@ -55,6 +55,15 @@ type AdminPage struct {
 	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
+type AdminPageDetail struct {
+	ID         int64     `json:"id"`
+	Title      string    `json:"title"`
+	Content    string    `json:"content"`
+	OwnerEmail string    `json:"ownerEmail"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
 type AdminStats struct {
 	Summary  AdminSummary    `json:"summary"`
 	Activity []DailyActivity `json:"activity"`
@@ -478,6 +487,20 @@ func (s *Store) GetPage(ctx context.Context, userID, id int64) (Page, error) {
 WHERE id = ? AND user_id = ?`, id, userID).Scan(&page.ID, &page.Title, &page.Content, &createdAt, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Page{}, ErrNotFound
+	}
+	page.CreatedAt = time.Unix(createdAt, 0).UTC()
+	page.UpdatedAt = time.Unix(updatedAt, 0).UTC()
+	return page, err
+}
+
+func (s *Store) GetPageForAdmin(ctx context.Context, id int64) (AdminPageDetail, error) {
+	var page AdminPageDetail
+	var createdAt, updatedAt int64
+	err := s.db.QueryRowContext(ctx, `SELECT pages.id, pages.title, pages.content, users.email, pages.created_at, pages.updated_at
+FROM pages JOIN users ON users.id = pages.user_id WHERE pages.id = ?`, id).
+		Scan(&page.ID, &page.Title, &page.Content, &page.OwnerEmail, &createdAt, &updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AdminPageDetail{}, ErrNotFound
 	}
 	page.CreatedAt = time.Unix(createdAt, 0).UTC()
 	page.UpdatedAt = time.Unix(updatedAt, 0).UTC()

@@ -34,6 +34,7 @@ func main() {
 		LoginCodeSecret:   os.Getenv("AUTH_CODE_SECRET"),
 		StaticDir:         envOr("STATIC_DIR", "frontend"),
 		AdminEmails:       splitEmails(os.Getenv("ADMIN_EMAILS")),
+		Logger:            logger,
 	})
 	if err != nil {
 		logger.Fatal(err)

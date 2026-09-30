@@ -96,7 +96,10 @@ function renderPages(pages) {
     const row = document.createElement('tr');
     const title = document.createElement('th');
     title.scope = 'row';
-    title.textContent = page.title;
+    const link = document.createElement('a');
+    link.href = `/admin/pages/${page.id}`;
+    link.textContent = page.title;
+    title.append(link);
     const owner = document.createElement('td');
     owner.textContent = page.ownerEmail;
     const created = document.createElement('td');
