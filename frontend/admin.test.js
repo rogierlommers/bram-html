@@ -49,7 +49,7 @@ test('admin page overview renders saved-page metadata as text', () => {
     updatedAt: '2026-09-24T12:30:00Z'
   }]);
 
-  assert.equal(elements.get('#pages-count').textContent, '1 page');
+  assert.equal(elements.get('#pages-count').textContent, '1 pagina');
   const row = elements.get('#admin-pages').children[0];
   assert.equal(row.children[0].children[0].textContent, '<img src=x onerror=alert(1)>');
   assert.equal(row.children[0].children[0].href, '/admin/pages/7');
@@ -62,10 +62,10 @@ test('admin page overview renders an empty state', () => {
   const { context, elements } = loadAdminScript();
   context.renderPages([]);
 
-  assert.equal(elements.get('#pages-count').textContent, '0 pages');
+  assert.equal(elements.get('#pages-count').textContent, '0 pagina’s');
   const cell = elements.get('#admin-pages').children[0].children[0];
   assert.equal(cell.colSpan, 4);
-  assert.equal(cell.textContent, 'No pages have been saved yet.');
+  assert.equal(cell.textContent, 'Er zijn nog geen pagina’s opgeslagen.');
 });
 
 test('admin page preview loads cross-user content into the sandboxed iframe', async () => {

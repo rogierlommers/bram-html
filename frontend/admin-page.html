@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="nl">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Admin preview of a saved bram-html page." />
-    <title>Saved page preview · bram-html</title>
+    <meta name="description" content="Beheervoorbeeld van een opgeslagen bram-html-pagina." />
+    <title>Voorbeeld van opgeslagen pagina · bram-html</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Nunito:wght@500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -12,26 +12,26 @@
   </head>
   <body>
     <header class="topbar">
-      <a class="brand" href="/" aria-label="Back to bram-html">
+      <a class="brand" href="/" aria-label="Terug naar bram-html">
         <span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>
         <span class="brand-name">bram-html</span>
       </a>
-      <a class="header-button" href="/admin">Back to admin overview</a>
+      <a class="header-button" href="/admin">Terug naar het beheeroverzicht</a>
     </header>
 
     <main class="admin-page-main">
-      <div class="admin-state" id="page-state" role="status">Loading saved page…</div>
+      <div class="admin-state" id="page-state" role="status">Opgeslagen pagina laden…</div>
       <div id="page-detail" hidden>
         <div class="admin-page-heading">
           <div>
-            <p class="eyebrow">SAVED PAGE PREVIEW</p>
+            <p class="eyebrow">VOORBEELD VAN OPGESLAGEN PAGINA</p>
             <h1 id="page-title"></h1>
-            <p>Saved by <strong id="page-owner"></strong> · Updated <span id="page-updated"></span></p>
+            <p>Opgeslagen door <strong id="page-owner"></strong> · Bijgewerkt op <span id="page-updated"></span></p>
           </div>
         </div>
         <section class="admin-preview-card" aria-labelledby="preview-title">
-          <h2 class="sr-only" id="preview-title">Rendered saved page</h2>
-          <iframe id="page-preview" title="Saved page preview" sandbox referrerpolicy="no-referrer"></iframe>
+          <h2 class="sr-only" id="preview-title">Weergave van opgeslagen pagina</h2>
+          <iframe id="page-preview" title="Voorbeeld van opgeslagen pagina" sandbox referrerpolicy="no-referrer"></iframe>
         </section>
       </div>
     </main>

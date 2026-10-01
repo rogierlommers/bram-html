@@ -391,7 +391,7 @@ func TestPageSavesNotifyAdminsAndAdminsCanViewEveryPage(t *testing.T) {
 	}
 
 	response = requestJSON(t, app.Handler(), http.MethodGet, "/admin/pages/"+strconv.FormatInt(page.ID, 10), nil, adminCookie)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Saved page preview") {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Voorbeeld van opgeslagen pagina") {
 		t.Fatalf("admin preview page: got %d: %s", response.Code, response.Body.String())
 	}
 }

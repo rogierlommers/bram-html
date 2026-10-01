@@ -18,8 +18,8 @@ const lessons = {
     </style>
   </head>
   <body>
-    <h1>Hello, world! 👋</h1>
-    <p>I made my first web page.</p>
+    <h1>Hallo, wereld! 👋</h1>
+    <p>Ik heb mijn eerste webpagina gemaakt.</p>
   </body>
 </html>`,
   colors: `<!DOCTYPE html>
@@ -43,8 +43,8 @@ const lessons = {
     </style>
   </head>
   <body>
-    <h1>CSS adds color! 🎨</h1>
-    <div class="rainbow">Try changing these colors.</div>
+    <h1>CSS voegt kleur toe! 🎨</h1>
+    <div class="rainbow">Probeer deze kleuren te veranderen.</div>
   </body>
 </html>`,
   card: `<!DOCTYPE html>
@@ -71,8 +71,8 @@ const lessons = {
   </head>
   <body>
     <div class="card">
-      <h1>Space Cat 🚀</h1>
-      <p>Explorer of the CSS galaxy.</p>
+      <h1>Ruimtekat 🚀</h1>
+      <p>Ontdekkingsreiziger in het CSS-sterrenstelsel.</p>
     </div>
   </body>
 </html>`
@@ -107,10 +107,11 @@ const saveMessage = document.querySelector('#save-message');
 const pagesMessage = document.querySelector('#pages-message');
 const savedPages = document.querySelector('#saved-pages');
 const toast = document.querySelector('#toast');
+const saveSound = document.querySelector('#save-sound');
 
 let currentLesson = 'blank';
 let currentPageID = null;
-let currentPageTitle = 'Blank page';
+let currentPageTitle = 'Lege pagina';
 let signedInUser = null;
 let pendingEmail = '';
 let authInProgress = false;
@@ -137,7 +138,7 @@ function selectLesson(lessonName) {
   currentLesson = lessonName;
   editor.value = lessons[lessonName];
   currentPageID = null;
-  currentPageTitle = lessonName === 'welcome' ? 'My first page' : document.querySelector(`[data-lesson="${lessonName}"] strong`).textContent;
+  currentPageTitle = lessonName === 'welcome' ? 'Mijn eerste pagina' : document.querySelector(`[data-lesson="${lessonName}"] strong`).textContent;
   pageSelect.value = 'new';
   lessonButtons.forEach((button) => {
     const isActive = button.dataset.lesson === lessonName;
@@ -189,7 +190,7 @@ async function api(path, options = {}) {
   });
   const data = response.status === 204 ? null : await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(data.error || 'Something went wrong.');
+    const error = new Error(data.error || 'Er is iets misgegaan.');
     error.status = response.status;
     throw error;
   }
@@ -204,7 +205,7 @@ function setSignedInUser(user) {
   pagesButton.hidden = !isSignedIn;
   adminLink.hidden = !user?.isAdmin;
   userEmail.textContent = user?.email || '';
-  authButton.textContent = isSignedIn ? 'Sign out' : 'Sign in';
+  authButton.textContent = isSignedIn ? 'Uitloggen' : 'Inloggen';
   if (!isSignedIn) {
     currentPageID = null;
     pageLoadGeneration++;
@@ -220,7 +221,7 @@ function renderPageOptions(pages) {
 
   const newPageOption = document.createElement('option');
   newPageOption.value = 'new';
-  newPageOption.textContent = 'New page';
+  newPageOption.textContent = 'Nieuwe pagina';
   pageSelect.append(newPageOption);
 
   pages.forEach((page) => {
@@ -305,8 +306,8 @@ function showCodeEntry(email) {
   codeInput.hidden = false;
   codeInput.required = true;
   authBack.hidden = false;
-  authSubmit.textContent = 'Verify code';
-  authDescription.textContent = `Enter the six-digit code sent to ${email}.`;
+  authSubmit.textContent = 'Code controleren';
+  authDescription.textContent = `Vul de zescijferige code in die naar ${email} is gestuurd.`;
   authMessage.textContent = '';
   codeInput.value = '';
   codeInput.focus();
@@ -320,8 +321,8 @@ function resetSignIn(focusEmail = true) {
   codeInput.required = false;
   codeInput.value = '';
   authBack.hidden = true;
-  authSubmit.textContent = 'Email my sign-in code';
-  authDescription.textContent = 'Enter an email address. We’ll send you a six-digit sign-in code.';
+  authSubmit.textContent = 'Stuur mij een inlogcode';
+  authDescription.textContent = 'Vul je e-mailadres in. We sturen je een zescijferige inlogcode.';
   authMessage.textContent = '';
   if (focusEmail) emailInput.focus();
 }
@@ -335,7 +336,7 @@ authButton.addEventListener('click', async () => {
     await api('/api/auth/logout', { method: 'POST' });
     setSignedInUser(null);
     selectLesson('blank');
-    showToast('You’re signed out.');
+    showToast('Je bent uitgelogd.');
   } catch (error) {
     showToast(error.message);
   }
@@ -347,10 +348,10 @@ authForm.addEventListener('submit', async (event) => {
   authInProgress = true;
   const sendingEmail = !pendingEmail;
   authSubmit.disabled = true;
-  authSubmit.textContent = sendingEmail ? 'Sending email…' : 'Checking…';
+  authSubmit.textContent = sendingEmail ? 'E-mail versturen…' : 'Controleren…';
   authProgress.hidden = !sendingEmail;
   authForm.setAttribute('aria-busy', 'true');
-  authMessage.textContent = sendingEmail ? 'Sending your sign-in code…' : 'Checking…';
+  authMessage.textContent = sendingEmail ? 'Je inlogcode wordt verstuurd…' : 'Controleren…';
   try {
     if (!pendingEmail) {
       const email = emailInput.value.trim().toLowerCase();
@@ -370,18 +371,18 @@ authForm.addEventListener('submit', async (event) => {
     void reportActivity();
     authDialog.close();
     resetSignIn(false);
-    showToast('You’re signed in. Your pages can now be saved!');
+    showToast('Je bent ingelogd. Je kunt je pagina’s nu opslaan!');
     try {
       await refreshPageOptions();
     } catch (error) {
-      if (!handleExpiredSession(error)) showToast(`Signed in, but pages could not be loaded: ${error.message}`);
+      if (!handleExpiredSession(error)) showToast(`Je bent ingelogd, maar je pagina’s konden niet worden geladen: ${error.message}`);
     }
   } catch (error) {
     authMessage.textContent = error.message;
   } finally {
     authInProgress = false;
     authSubmit.disabled = false;
-    authSubmit.textContent = pendingEmail ? 'Verify code' : 'Email my sign-in code';
+    authSubmit.textContent = pendingEmail ? 'Code controleren' : 'Stuur mij een inlogcode';
     authProgress.hidden = true;
     authForm.removeAttribute('aria-busy');
   }
@@ -404,10 +405,12 @@ saveButton.addEventListener('click', () => {
 
 saveForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  saveSound.currentTime = 0;
+  void saveSound.play().catch(() => {});
   const title = pageNameInput.value.trim();
   if (!title) {
     pageNameInput.focus();
-    saveMessage.textContent = 'Enter a page name.';
+    saveMessage.textContent = 'Vul een paginanaam in.';
     return;
   }
 
@@ -417,7 +420,7 @@ saveForm.addEventListener('submit', async (event) => {
   saveInProgress = true;
   submitButton.disabled = true;
   saveCloseButton.disabled = true;
-  saveMessage.textContent = 'Saving…';
+  saveMessage.textContent = 'Opslaan…';
   try {
     const page = await api(pageID ? `/api/pages/${pageID}` : '/api/pages', {
       method: pageID ? 'PUT' : 'POST',
@@ -427,7 +430,7 @@ saveForm.addEventListener('submit', async (event) => {
     currentPageTitle = page.title;
     selectPageOption(page);
     saveDialog.close();
-    showToast('Page saved!');
+    showToast('Pagina opgeslagen!');
   } catch (error) {
     if (error.status === 401) {
       saveDialog.close();
@@ -448,7 +451,7 @@ saveDialog.addEventListener('cancel', (event) => {
 
 pagesButton.addEventListener('click', async () => {
   pagesDialog.showModal();
-  pagesMessage.textContent = 'Loading…';
+  pagesMessage.textContent = 'Laden…';
   const user = signedInUser;
   const generation = ++pageListGeneration;
   try {
@@ -468,7 +471,7 @@ function renderSavedPages(pages) {
   if (pages.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'empty-state';
-    empty.textContent = 'No saved pages yet. Make something awesome!';
+    empty.textContent = 'Je hebt nog geen pagina’s opgeslagen. Maak iets moois!';
     savedPages.append(empty);
     return;
   }
@@ -480,14 +483,14 @@ function renderSavedPages(pages) {
     open.type = 'button';
     open.textContent = page.title;
     const date = document.createElement('small');
-    date.textContent = `Updated ${new Date(page.updatedAt).toLocaleDateString()}`;
+    date.textContent = `Bijgewerkt op ${new Date(page.updatedAt).toLocaleDateString('nl-NL')}`;
     open.append(date);
     open.addEventListener('click', () => openSavedPage(page.id));
     const remove = document.createElement('button');
     remove.className = 'delete-page';
     remove.type = 'button';
-    remove.textContent = 'Delete';
-    remove.setAttribute('aria-label', `Delete ${page.title}`);
+    remove.textContent = 'Verwijderen';
+    remove.setAttribute('aria-label', `${page.title} verwijderen`);
     remove.addEventListener('click', () => deleteSavedPage(page.id, page.title, row));
     row.append(open, remove);
     savedPages.append(row);
@@ -506,7 +509,7 @@ async function openSavedPage(id, closeDialog = true) {
     editor.value = page.content;
     renderPreview();
     if (closeDialog) pagesDialog.close();
-    showToast('Page opened.');
+    showToast('Pagina geopend.');
   } catch (error) {
     if (loadGeneration !== pageLoadGeneration) return;
     if (handleExpiredSession(error)) return;
@@ -522,7 +525,7 @@ async function openSavedPage(id, closeDialog = true) {
 }
 
 async function deleteSavedPage(id, title, row) {
-  if (!window.confirm(`Delete “${title}”?`)) return;
+  if (!window.confirm(`‘${title}’ verwijderen?`)) return;
   try {
     await api(`/api/pages/${id}`, { method: 'DELETE' });
     pageListGeneration++;

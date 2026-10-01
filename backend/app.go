@@ -34,15 +34,15 @@ const (
 	defaultVerifyAllLimit = 500
 )
 
-var errRequestTooLarge = errors.New("request body is too large")
+var errRequestTooLarge = errors.New("de aanvraag is te groot")
 
 var magicLinkPage = template.Must(template.New("magic-link").Parse(`<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign in · bram-html</title><link rel="stylesheet" href="/styles.css"></head>
-<body><main class="confirmation-page"><section class="confirmation-card"><p class="eyebrow">ONE MORE STEP</p>
-<h1>Sign in to bram-html?</h1><p>This link can only be used once.</p>
+<html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inloggen · bram-html</title><link rel="stylesheet" href="/styles.css"></head>
+<body><main class="confirmation-page"><section class="confirmation-card"><p class="eyebrow">NOG ÉÉN STAP</p>
+<h1>Inloggen bij bram-html?</h1><p>Deze link kan maar één keer worden gebruikt.</p>
 <form method="post" action="/api/auth/verify"><input type="hidden" name="token" value="{{.}}">
-<button class="save-button" type="submit">Yes, sign me in</button></form></section></main></body></html>`))
+<button class="save-button" type="submit">Ja, log mij in</button></form></section></main></body></html>`))
 
 type Config struct {
 	BaseURL           string
@@ -213,42 +213,42 @@ func (a *App) requestLoginCode(w http.ResponseWriter, r *http.Request) {
 	}
 	input.Email = normalizeEmail(input.Email)
 	if !validEmail(input.Email) {
-		writeError(w, http.StatusBadRequest, "enter a valid email address")
+		writeError(w, http.StatusBadRequest, "vul een geldig e-mailadres in")
 		return
 	}
 	if !a.loginRequestLimiter.Allow(r) {
 		w.Header().Set("Retry-After", "600")
-		writeError(w, http.StatusTooManyRequests, "too many sign-in requests; try again later")
+		writeError(w, http.StatusTooManyRequests, "te veel inlogverzoeken; probeer het later opnieuw")
 		return
 	}
 
 	code, err := randomLoginCode()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not create sign-in code")
+		writeError(w, http.StatusInternalServerError, "de inlogcode kon niet worden aangemaakt")
 		return
 	}
 	codeHash := hashLoginCode(a.loginCodeSecret, input.Email, code)
 	codeID, err := a.store.CreateLoginCode(r.Context(), input.Email, codeHash, time.Now().Add(a.config.LoginCodeTTL))
 	if errors.Is(err, ErrRateLimited) {
-		writeJSON(w, http.StatusAccepted, map[string]string{"message": "If that address can receive mail, a sign-in code is on its way."})
+		writeJSON(w, http.StatusAccepted, map[string]string{"message": "Als dit adres e-mail kan ontvangen, is er een inlogcode onderweg."})
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not create sign-in code")
+		writeError(w, http.StatusInternalServerError, "de inlogcode kon niet worden aangemaakt")
 		return
 	}
 
 	if err := a.mailer.SendLoginCode(r.Context(), input.Email, code); err != nil {
 		_ = a.store.RevokeLoginCode(r.Context(), codeID)
-		writeError(w, http.StatusBadGateway, "could not send sign-in email")
+		writeError(w, http.StatusBadGateway, "de e-mail met de inlogcode kon niet worden verstuurd")
 		return
 	}
 	if err := a.store.ActivateLoginCode(r.Context(), codeID); err != nil {
 		_ = a.store.RevokeLoginCode(r.Context(), codeID)
-		writeError(w, http.StatusInternalServerError, "could not activate sign-in code")
+		writeError(w, http.StatusInternalServerError, "de inlogcode kon niet worden geactiveerd")
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"message": "If that address can receive mail, a sign-in code is on its way."})
+	writeJSON(w, http.StatusAccepted, map[string]string{"message": "Als dit adres e-mail kan ontvangen, is er een inlogcode onderweg."})
 }
 
 func (a *App) verifyLoginCode(w http.ResponseWriter, r *http.Request) {
@@ -263,27 +263,27 @@ func (a *App) verifyLoginCode(w http.ResponseWriter, r *http.Request) {
 	input.Email = normalizeEmail(input.Email)
 	input.Code = strings.TrimSpace(input.Code)
 	if !validEmail(input.Email) || !validLoginCode(input.Code) {
-		writeError(w, http.StatusUnauthorized, "invalid or expired sign-in code")
+		writeError(w, http.StatusUnauthorized, "ongeldige of verlopen inlogcode")
 		return
 	}
 	if !a.loginVerifyLimiter.Allow(r) {
 		w.Header().Set("Retry-After", "600")
-		writeError(w, http.StatusTooManyRequests, "too many sign-in attempts; try again later")
+		writeError(w, http.StatusTooManyRequests, "te veel inlogpogingen; probeer het later opnieuw")
 		return
 	}
 	sessionToken, err := randomToken()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not create session")
+		writeError(w, http.StatusInternalServerError, "de sessie kon niet worden aangemaakt")
 		return
 	}
 	codeHash := hashLoginCode(a.loginCodeSecret, input.Email, input.Code)
 	user, err := a.store.ConsumeLoginCode(r.Context(), input.Email, codeHash, hashToken(sessionToken), time.Now().Add(a.config.SessionTTL))
 	if errors.Is(err, ErrInvalidCode) {
-		writeError(w, http.StatusUnauthorized, "invalid or expired sign-in code")
+		writeError(w, http.StatusUnauthorized, "ongeldige of verlopen inlogcode")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not create session")
+		writeError(w, http.StatusInternalServerError, "de sessie kon niet worden aangemaakt")
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -296,7 +296,7 @@ func (a *App) verifyLoginCode(w http.ResponseWriter, r *http.Request) {
 func (a *App) confirmMagicLink(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	if token == "" {
-		writeError(w, http.StatusUnauthorized, "invalid or expired sign-in link")
+		writeError(w, http.StatusUnauthorized, "ongeldige of verlopen inloglink")
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -316,26 +316,26 @@ func (a *App) verifySignIn(w http.ResponseWriter, r *http.Request) {
 func (a *App) verifyMagicLink(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 	if err := r.ParseForm(); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid sign-in request")
+		writeError(w, http.StatusBadRequest, "ongeldig inlogverzoek")
 		return
 	}
 	token := r.PostForm.Get("token")
 	if token == "" {
-		writeError(w, http.StatusUnauthorized, "invalid or expired sign-in link")
+		writeError(w, http.StatusUnauthorized, "ongeldige of verlopen inloglink")
 		return
 	}
 	sessionToken, err := randomToken()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not create session")
+		writeError(w, http.StatusInternalServerError, "de sessie kon niet worden aangemaakt")
 		return
 	}
 	_, err = a.store.ConsumeMagicLink(r.Context(), hashToken(token), hashToken(sessionToken), time.Now().Add(a.config.SessionTTL))
 	if errors.Is(err, ErrInvalidLink) {
-		writeError(w, http.StatusUnauthorized, "invalid or expired sign-in link")
+		writeError(w, http.StatusUnauthorized, "ongeldige of verlopen inloglink")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not create session")
+		writeError(w, http.StatusInternalServerError, "de sessie kon niet worden aangemaakt")
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -349,17 +349,17 @@ func (a *App) withUser(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(a.config.CookieName)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "sign in to continue")
+			writeError(w, http.StatusUnauthorized, "log in om door te gaan")
 			return
 		}
 		user, err := a.store.UserBySession(r.Context(), hashToken(cookie.Value))
 		if errors.Is(err, ErrNotFound) {
 			clearCookie(w, a.config.CookieName, a.cookieSecure)
-			writeError(w, http.StatusUnauthorized, "sign in to continue")
+			writeError(w, http.StatusUnauthorized, "log in om door te gaan")
 			return
 		}
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "could not check session")
+			writeError(w, http.StatusInternalServerError, "de sessie kon niet worden gecontroleerd")
 			return
 		}
 		user = a.decorateUser(user)
@@ -379,7 +379,7 @@ func (a *App) decorateUser(user User) User {
 func (a *App) withAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !currentUser(r).IsAdmin {
-			writeError(w, http.StatusForbidden, "admin access required")
+			writeError(w, http.StatusForbidden, "beheerderstoegang vereist")
 			return
 		}
 		next(w, r)
@@ -388,7 +388,7 @@ func (a *App) withAdmin(next http.HandlerFunc) http.HandlerFunc {
 
 func (a *App) recordActivity(w http.ResponseWriter, r *http.Request) {
 	if err := a.store.TouchActivity(r.Context(), currentUser(r).ID, time.Now()); err != nil {
-		writeError(w, http.StatusInternalServerError, "could not record activity")
+		writeError(w, http.StatusInternalServerError, "de activiteit kon niet worden opgeslagen")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -397,7 +397,7 @@ func (a *App) recordActivity(w http.ResponseWriter, r *http.Request) {
 func (a *App) adminStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := a.store.AdminStats(r.Context(), time.Now(), 30, 5*time.Minute)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not load statistics")
+		writeError(w, http.StatusInternalServerError, "de statistieken konden niet worden geladen")
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -422,11 +422,11 @@ func (a *App) adminPageDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	page, err := a.store.GetPageForAdmin(r.Context(), id)
 	if errors.Is(err, ErrNotFound) {
-		writeError(w, http.StatusNotFound, "page not found")
+		writeError(w, http.StatusNotFound, "pagina niet gevonden")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not load page")
+		writeError(w, http.StatusInternalServerError, "de pagina kon niet worden geladen")
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -444,7 +444,7 @@ func (a *App) logout(w http.ResponseWriter, r *http.Request) {
 func (a *App) listPages(w http.ResponseWriter, r *http.Request) {
 	pages, err := a.store.ListPages(r.Context(), currentUser(r).ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not load pages")
+		writeError(w, http.StatusInternalServerError, "de pagina’s konden niet worden geladen")
 		return
 	}
 	writeJSON(w, http.StatusOK, pages)
@@ -466,7 +466,7 @@ func (a *App) createPage(w http.ResponseWriter, r *http.Request) {
 	}
 	page, err := a.store.CreatePage(r.Context(), currentUser(r).ID, title, content)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not save page")
+		writeError(w, http.StatusInternalServerError, "de pagina kon niet worden opgeslagen")
 		return
 	}
 	a.notifyPageSaved(currentUser(r), page, false)
@@ -484,11 +484,11 @@ func (a *App) updatePage(w http.ResponseWriter, r *http.Request) {
 	}
 	page, err := a.store.UpdatePage(r.Context(), currentUser(r).ID, id, title, content)
 	if errors.Is(err, ErrNotFound) {
-		writeError(w, http.StatusNotFound, "page not found")
+		writeError(w, http.StatusNotFound, "pagina niet gevonden")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not save page")
+		writeError(w, http.StatusInternalServerError, "de pagina kon niet worden opgeslagen")
 		return
 	}
 	a.notifyPageSaved(currentUser(r), page, true)
@@ -523,11 +523,11 @@ func (a *App) deletePage(w http.ResponseWriter, r *http.Request) {
 	}
 	err := a.store.DeletePage(r.Context(), currentUser(r).ID, id)
 	if errors.Is(err, ErrNotFound) {
-		writeError(w, http.StatusNotFound, "page not found")
+		writeError(w, http.StatusNotFound, "pagina niet gevonden")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not delete page")
+		writeError(w, http.StatusInternalServerError, "de pagina kon niet worden verwijderd")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -544,7 +544,7 @@ func (a *App) pageInput(w http.ResponseWriter, r *http.Request) (string, string,
 	}
 	input.Title = strings.TrimSpace(input.Title)
 	if input.Title == "" || utf8.RuneCountInString(input.Title) > 100 {
-		writeError(w, http.StatusBadRequest, "title must be between 1 and 100 characters")
+		writeError(w, http.StatusBadRequest, "de titel moet tussen 1 en 100 tekens lang zijn")
 		return "", "", false
 	}
 	return input.Title, input.Content, true
@@ -559,10 +559,10 @@ func (a *App) decodeJSON(w http.ResponseWriter, r *http.Request, destination any
 		if errors.As(err, &maxBytesError) {
 			return errRequestTooLarge
 		}
-		return fmt.Errorf("invalid request: %w", err)
+		return fmt.Errorf("ongeldig verzoek: %w", err)
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return errors.New("invalid request: only one JSON object is allowed")
+		return errors.New("ongeldig verzoek: er is maar één JSON-object toegestaan")
 	}
 	return nil
 }
@@ -574,7 +574,7 @@ func currentUser(r *http.Request) User {
 func parsePageID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id < 1 {
-		writeError(w, http.StatusBadRequest, "invalid page id")
+		writeError(w, http.StatusBadRequest, "ongeldig pagina-ID")
 		return 0, false
 	}
 	return id, true
@@ -582,11 +582,11 @@ func parsePageID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 
 func writePageResult(w http.ResponseWriter, page Page, err error) {
 	if errors.Is(err, ErrNotFound) {
-		writeError(w, http.StatusNotFound, "page not found")
+		writeError(w, http.StatusNotFound, "pagina niet gevonden")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not load page")
+		writeError(w, http.StatusInternalServerError, "de pagina kon niet worden geladen")
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
@@ -604,7 +604,7 @@ func writeError(w http.ResponseWriter, status int, message string) {
 
 func writeDecodeError(w http.ResponseWriter, err error) {
 	if errors.Is(err, errRequestTooLarge) {
-		writeError(w, http.StatusRequestEntityTooLarge, "request body is too large")
+		writeError(w, http.StatusRequestEntityTooLarge, "de aanvraag is te groot")
 		return
 	}
 	writeError(w, http.StatusBadRequest, err.Error())

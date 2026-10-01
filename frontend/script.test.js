@@ -12,6 +12,7 @@ class FakeElement {
     this.hidden = false;
     this.listeners = new Map();
     this.options = [];
+    this.playCalls = 0;
     this.value = '';
   }
 
@@ -22,6 +23,7 @@ class FakeElement {
   }
   close() { this.open = false; }
   focus() {}
+  play() { this.playCalls++; return Promise.resolve(); }
   insertBefore(child) { this.options.push(child); }
   querySelector() { return new FakeElement(); }
   removeAttribute(name) { this.attributes.delete(name); }
@@ -72,8 +74,23 @@ function loadApp(authRequest) {
     }
   };
   vm.runInNewContext(fs.readFileSync(`${__dirname}/script.js`, 'utf8'), context);
-  return { elements, submit: element('#auth-form').listeners.get('submit') };
+  return {
+    elements,
+    submit: element('#auth-form').listeners.get('submit'),
+    saveSubmit: element('#save-form').listeners.get('submit')
+  };
 }
+
+test('saving a page plays the save sound from the beginning', async () => {
+  const app = loadApp(() => Promise.resolve(response(202)));
+  const sound = app.elements.get('#save-sound');
+  sound.currentTime = 8;
+
+  await app.saveSubmit({ preventDefault() {} });
+
+  assert.equal(sound.currentTime, 0);
+  assert.equal(sound.playCalls, 1);
+});
 
 test('sign-in submission ignores a second request while email is sending', async () => {
   let calls = 0;
@@ -96,7 +113,7 @@ test('sign-in submission ignores a second request while email is sending', async
   finishRequest();
   await first;
   assert.equal(app.elements.get('#auth-submit').disabled, false);
-  assert.equal(app.elements.get('#auth-submit').textContent, 'Verify code');
+  assert.equal(app.elements.get('#auth-submit').textContent, 'Code controleren');
   assert.equal(app.elements.get('#auth-progress').hidden, true);
   assert.equal(app.elements.get('#auth-form').attributes.has('aria-busy'), false);
 });
@@ -112,7 +129,7 @@ test('sign-in submission restores controls when sending fails', async () => {
   await submission;
 
   assert.equal(app.elements.get('#auth-submit').disabled, false);
-  assert.equal(app.elements.get('#auth-submit').textContent, 'Email my sign-in code');
+  assert.equal(app.elements.get('#auth-submit').textContent, 'Stuur mij een inlogcode');
   assert.equal(app.elements.get('#auth-progress').hidden, true);
   assert.equal(app.elements.get('#auth-form').attributes.has('aria-busy'), false);
   assert.equal(app.elements.get('#auth-message').textContent, 'mail unavailable');

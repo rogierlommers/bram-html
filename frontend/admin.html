@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="nl">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="bram-html administration statistics." />
+    <meta name="description" content="Beheerstatistieken van bram-html." />
     <title>Admin · bram-html</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -12,41 +12,41 @@
   </head>
   <body>
     <header class="topbar">
-      <a class="brand" href="/" aria-label="Back to bram-html">
+      <a class="brand" href="/" aria-label="Terug naar bram-html">
         <span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>
         <span class="brand-name">bram-html</span>
       </a>
-      <a class="header-button" href="/">Back to playground</a>
+      <a class="header-button" href="/">Terug naar de speeltuin</a>
     </header>
 
     <main class="admin-main">
       <div class="admin-heading">
         <div>
-          <p class="eyebrow">ADMIN OVERVIEW</p>
-          <h1>How bram-html is growing</h1>
-          <p>Usage and creation activity from the last 30 days.</p>
+          <p class="eyebrow">BEHEEROVERZICHT</p>
+          <h1>De groei van bram-html</h1>
+          <p>Gebruik en gemaakte pagina’s van de afgelopen 30 dagen.</p>
         </div>
-        <div class="online-pill" id="online-pill" hidden><span id="online-count">0</span> online now</div>
+        <div class="online-pill" id="online-pill" hidden><span id="online-count">0</span> nu online</div>
       </div>
 
-      <div class="admin-state" id="admin-state" role="status">Loading statistics…</div>
+      <div class="admin-state" id="admin-state" role="status">Statistieken laden…</div>
       <div id="admin-dashboard" hidden>
-        <section class="stat-grid" aria-label="Summary statistics">
-          <article class="stat-card"><span>Total users</span><strong id="total-users">0</strong></article>
-          <article class="stat-card"><span>Saved pages</span><strong id="total-pages">0</strong></article>
-          <article class="stat-card"><span>Online users</span><strong id="online-users">0</strong></article>
+        <section class="stat-grid" aria-label="Samenvatting van de statistieken">
+          <article class="stat-card"><span>Totaal aantal gebruikers</span><strong id="total-users">0</strong></article>
+          <article class="stat-card"><span>Opgeslagen pagina’s</span><strong id="total-pages">0</strong></article>
+          <article class="stat-card"><span>Online gebruikers</span><strong id="online-users">0</strong></article>
         </section>
 
         <section class="activity-card" aria-labelledby="activity-title">
           <div class="activity-header">
             <div>
-              <h2 id="activity-title">Activity over time</h2>
-              <p>Unique active users, new accounts, and pages created each day.</p>
+              <h2 id="activity-title">Activiteit door de tijd heen</h2>
+              <p>Unieke actieve gebruikers, nieuwe accounts en gemaakte pagina’s per dag.</p>
             </div>
             <div class="chart-legend" aria-hidden="true">
-              <span><i class="legend-dot legend-active"></i>Active users</span>
-              <span><i class="legend-dot legend-users"></i>New users</span>
-              <span><i class="legend-dot legend-pages"></i>Pages</span>
+              <span><i class="legend-dot legend-active"></i>Actieve gebruikers</span>
+              <span><i class="legend-dot legend-users"></i>Nieuwe gebruikers</span>
+              <span><i class="legend-dot legend-pages"></i>Pagina’s</span>
             </div>
           </div>
           <div class="activity-chart" id="activity-chart"></div>
@@ -55,16 +55,16 @@
         <section class="activity-card pages-card" aria-labelledby="pages-overview-title">
           <div class="activity-header">
             <div>
-              <h2 id="pages-overview-title">All saved pages</h2>
-              <p>Every page saved by a bram-html user, most recently updated first.</p>
+              <h2 id="pages-overview-title">Alle opgeslagen pagina’s</h2>
+              <p>Elke pagina die een gebruiker heeft opgeslagen, met de nieuwste wijziging bovenaan.</p>
             </div>
-            <span class="pages-count" id="pages-count">0 pages</span>
+            <span class="pages-count" id="pages-count">0 pagina’s</span>
           </div>
           <div class="admin-pages-wrap">
             <table class="admin-pages-table">
-              <caption class="sr-only">Saved pages and their owners</caption>
+              <caption class="sr-only">Opgeslagen pagina’s en hun eigenaren</caption>
               <thead>
-                <tr><th scope="col">Page</th><th scope="col">Owner</th><th scope="col">Created</th><th scope="col">Updated</th></tr>
+                <tr><th scope="col">Pagina</th><th scope="col">Eigenaar</th><th scope="col">Gemaakt</th><th scope="col">Bijgewerkt</th></tr>
               </thead>
               <tbody id="admin-pages"></tbody>
             </table>

@@ -1,7 +1,7 @@
 const state = document.querySelector('#page-state');
 const detail = document.querySelector('#page-detail');
 const pageID = window.location.pathname.split('/').pop();
-const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+const dateFormatter = new Intl.DateTimeFormat('nl-NL', { dateStyle: 'medium', timeStyle: 'short' });
 
 async function loadPage() {
   try {
@@ -9,7 +9,7 @@ async function loadPage() {
       headers: { Accept: 'application/json' }
     });
     const page = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(page.error || 'The saved page could not be loaded.');
+    if (!response.ok) throw new Error(page.error || 'De opgeslagen pagina kon niet worden geladen.');
 
     document.title = `${page.title} · bram-html`;
     document.querySelector('#page-title').textContent = page.title;

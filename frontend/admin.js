@@ -1,8 +1,8 @@
 const state = document.querySelector('#admin-state');
 const dashboard = document.querySelector('#admin-dashboard');
 const onlinePill = document.querySelector('#online-pill');
-const numberFormatter = new Intl.NumberFormat();
-const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+const numberFormatter = new Intl.NumberFormat('nl-NL');
+const dateFormatter = new Intl.DateTimeFormat('nl-NL', { dateStyle: 'medium', timeStyle: 'short' });
 
 async function api(path, options = {}) {
   const headers = new Headers(options.headers);
@@ -10,7 +10,7 @@ async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(data.error || 'Statistics could not be loaded.');
+    const error = new Error(data.error || 'De statistieken konden niet worden geladen.');
     error.status = response.status;
     throw error;
   }
@@ -37,9 +37,9 @@ function renderChart(activity) {
   const roundedMaximum = Math.max(4, Math.ceil(maximum / 4) * 4);
   const svg = svgElement('svg', { viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-labelledby': 'chart-title chart-description' });
   const title = svgElement('title', { id: 'chart-title' });
-  title.textContent = 'Activity during the last 30 days';
+  title.textContent = 'Activiteit tijdens de afgelopen 30 dagen';
   const description = svgElement('desc', { id: 'chart-description' });
-  description.textContent = 'Line chart of unique active users, new users, and pages created per day.';
+  description.textContent = 'Lijndiagram van unieke actieve gebruikers, nieuwe gebruikers en gemaakte pagina’s per dag.';
   svg.append(title, description);
 
   for (let step = 0; step <= 4; step++) {
@@ -65,7 +65,7 @@ function renderChart(activity) {
   activity.forEach((day, index) => {
     if (index % 5 !== 0 && index !== activity.length - 1) return;
     const label = svgElement('text', { class: 'chart-label', x: xFor(index), y: height - 13, 'text-anchor': 'middle' });
-    label.textContent = new Date(`${day.date}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    label.textContent = new Date(`${day.date}T00:00:00Z`).toLocaleDateString('nl-NL', { month: 'short', day: 'numeric', timeZone: 'UTC' });
     svg.append(label);
   });
 
@@ -78,7 +78,7 @@ function formatDate(value) {
 
 function renderPages(pages) {
   const body = document.querySelector('#admin-pages');
-  document.querySelector('#pages-count').textContent = `${numberFormatter.format(pages.length)} ${pages.length === 1 ? 'page' : 'pages'}`;
+  document.querySelector('#pages-count').textContent = `${numberFormatter.format(pages.length)} ${pages.length === 1 ? 'pagina' : 'pagina’s'}`;
   body.replaceChildren();
 
   if (pages.length === 0) {
@@ -86,7 +86,7 @@ function renderPages(pages) {
     const cell = document.createElement('td');
     cell.colSpan = 4;
     cell.className = 'admin-pages-empty';
-    cell.textContent = 'No pages have been saved yet.';
+    cell.textContent = 'Er zijn nog geen pagina’s opgeslagen.';
     row.append(cell);
     body.append(row);
     return;
@@ -131,9 +131,9 @@ async function loadStatistics() {
     dashboard.hidden = true;
     onlinePill.hidden = true;
     if (error.status === 401) {
-      state.replaceChildren('Sign in with an administrator account from the ', Object.assign(document.createElement('a'), { href: '/', textContent: 'playground' }), '.');
+      state.replaceChildren('Log vanuit de ', Object.assign(document.createElement('a'), { href: '/', textContent: 'speeltuin' }), ' in met een beheerdersaccount.');
     } else if (error.status === 403) {
-      state.textContent = 'This page is only available to administrators.';
+      state.textContent = 'Deze pagina is alleen beschikbaar voor beheerders.';
     } else {
       state.textContent = error.message;
     }

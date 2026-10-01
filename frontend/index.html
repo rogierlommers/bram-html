@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="nl">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="bram-html is a friendly HTML and CSS playground for young learners." />
+    <meta name="description" content="bram-html is een toegankelijke HTML- en CSS-speeltuin voor jonge makers." />
     <title>bram-html</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -12,125 +12,126 @@
   </head>
   <body>
     <header class="topbar">
-      <a class="brand" href="#" aria-label="bram-html home">
+      <a class="brand" href="#" aria-label="Startpagina van bram-html">
         <span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>
         <span class="brand-name">bram-html</span>
       </a>
       <div class="account-actions">
         <span class="user-email" id="user-email" hidden></span>
         <a class="header-button admin-link" id="admin-link" href="/admin" hidden>Admin</a>
-        <button class="header-button" id="pages-button" type="button" hidden>My pages</button>
-        <button class="header-button primary" id="auth-button" type="button">Sign in</button>
+        <button class="header-button" id="pages-button" type="button" hidden>Mijn pagina’s</button>
+        <button class="header-button primary" id="auth-button" type="button">Inloggen</button>
       </div>
     </header>
 
     <main>
       <section class="intro" aria-labelledby="page-title">
         <div>
-          <h1 id="page-title">What will you build today?</h1>
+          <h1 id="page-title">Wat ga jij vandaag maken?</h1>
         </div>
         <div class="intro-actions">
-          <button class="save-button" id="save-button" type="button">Save page</button>
+          <button class="save-button" id="save-button" type="button">Pagina opslaan</button>
         </div>
       </section>
 
-      <section class="lesson-strip" aria-label="Quick lessons">
+      <section class="lesson-strip" aria-label="Snelle lessen">
         <button class="lesson active" type="button" data-lesson="blank">
           <span class="lesson-number">01</span>
-          <span><strong>Blank page</strong><small>Start from scratch</small></span>
+          <span><strong>Lege pagina</strong><small>Begin helemaal zelf</small></span>
         </button>
         <button class="lesson" type="button" data-lesson="welcome">
           <span class="lesson-number">02</span>
-          <span><strong>Say hello</strong><small>Headings &amp; text</small></span>
+          <span><strong>Zeg hallo</strong><small>Koppen &amp; tekst</small></span>
         </button>
         <button class="lesson" type="button" data-lesson="colors">
           <span class="lesson-number">03</span>
-          <span><strong>Play with color</strong><small>CSS styles</small></span>
+          <span><strong>Speel met kleur</strong><small>CSS-stijlen</small></span>
         </button>
         <button class="lesson" type="button" data-lesson="card">
           <span class="lesson-number">04</span>
-          <span><strong>Build a card</strong><small>Boxes &amp; spacing</small></span>
+          <span><strong>Maak een kaart</strong><small>Vakken &amp; witruimte</small></span>
         </button>
       </section>
 
-      <section class="workspace" aria-label="Coding playground">
+      <section class="workspace" aria-label="Programmeerspeeltuin">
         <div class="panel code-panel">
           <div class="panel-header">
             <div>
               <span class="status-dot coral" aria-hidden="true"></span>
-              <h2>Page</h2>
+              <h2>Pagina</h2>
             </div>
             <label class="page-title-label">
-              <span class="sr-only">Select a page</span>
+              <span class="sr-only">Kies een pagina</span>
               <select id="page-select">
-                <option value="new">New page</option>
+                <option value="new">Nieuwe pagina</option>
               </select>
             </label>
-            <button class="text-button" id="reset-button" type="button">↻ Reset</button>
+            <button class="text-button" id="reset-button" type="button">↻ Opnieuw</button>
           </div>
           <div class="editor-wrap">
-            <label class="sr-only" for="code-editor">HTML and CSS code</label>
+            <label class="sr-only" for="code-editor">HTML- en CSS-code</label>
             <textarea id="code-editor" spellcheck="false" autocapitalize="off" aria-describedby="editor-tip"></textarea>
           </div>
-          <p class="panel-tip" id="editor-tip"><span aria-hidden="true">🧑‍💻</span> source code here.</p>
+          <p class="panel-tip" id="editor-tip"><span aria-hidden="true">🧑‍💻</span> hier staat de broncode.</p>
         </div>
 
         <div class="panel preview-panel">
           <div class="panel-header">
             <div>
               <span class="status-dot green" aria-hidden="true"></span>
-              <h2>Live preview</h2>
+              <h2>Live voorbeeld</h2>
             </div>
             <span class="live-label">LIVE</span>
           </div>
-          <iframe id="preview" title="Live preview of your code" sandbox="allow-modals"></iframe>
-          <p class="panel-tip"><span aria-hidden="true">✨</span> rendered html here.</p>
+          <iframe id="preview" title="Live voorbeeld van je code" sandbox="allow-modals"></iframe>
+          <p class="panel-tip"><span aria-hidden="true">✨</span> hier zie je het resultaat.</p>
         </div>
       </section>
     </main>
 
     <dialog class="modal" id="auth-dialog" aria-labelledby="auth-title">
       <form class="modal-card" id="auth-form">
-        <button class="modal-close" type="button" data-close="auth-dialog" aria-label="Close">×</button>
-        <p class="eyebrow">SAVE YOUR CREATIONS</p>
-        <h2 id="auth-title">Sign in to bram-html</h2>
-        <p id="auth-description">Enter an email address. We’ll send you a six-digit sign-in code.</p>
-        <label class="field-label" for="email-input">Email address</label>
+        <button class="modal-close" type="button" data-close="auth-dialog" aria-label="Sluiten">×</button>
+        <p class="eyebrow">BEWAAR WAT JE MAAKT</p>
+        <h2 id="auth-title">Inloggen bij bram-html</h2>
+        <p id="auth-description">Vul je e-mailadres in. We sturen je een zescijferige inlogcode.</p>
+        <label class="field-label" for="email-input">E-mailadres</label>
         <input class="field-input" id="email-input" name="email" type="email" autocomplete="email" required />
-        <label class="field-label" id="code-label" for="code-input" hidden>Sign-in code</label>
+        <label class="field-label" id="code-label" for="code-input" hidden>Inlogcode</label>
         <input class="field-input" id="code-input" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" hidden />
-        <button class="modal-action" id="auth-submit" type="submit">Email my sign-in code</button>
-        <div class="auth-progress" id="auth-progress" role="progressbar" aria-label="Sending sign-in email" hidden>
+        <button class="modal-action" id="auth-submit" type="submit">Stuur mij een inlogcode</button>
+        <div class="auth-progress" id="auth-progress" role="progressbar" aria-label="E-mail met inlogcode versturen" hidden>
           <span></span>
         </div>
-        <button class="text-button" id="auth-back" type="button" hidden>Use another email</button>
+        <button class="text-button" id="auth-back" type="button" hidden>Een ander e-mailadres gebruiken</button>
         <p class="form-message" id="auth-message" role="status"></p>
       </form>
     </dialog>
 
     <dialog class="modal" id="save-dialog" aria-labelledby="save-title">
       <form class="modal-card" id="save-form">
-        <button class="modal-close" type="button" data-close="save-dialog" aria-label="Close">×</button>
-        <p class="eyebrow">SAVE YOUR CREATION</p>
-        <h2 id="save-title">Name your page</h2>
-        <label class="field-label" for="page-name-input">Page name</label>
+        <button class="modal-close" type="button" data-close="save-dialog" aria-label="Sluiten">×</button>
+        <p class="eyebrow">BEWAAR WAT JE MAAKT</p>
+        <h2 id="save-title">Geef je pagina een naam</h2>
+        <label class="field-label" for="page-name-input">Paginanaam</label>
         <input class="field-input" id="page-name-input" name="page-name" maxlength="100" required />
-        <button class="modal-action" type="submit">Save page</button>
+        <button class="modal-action" type="submit">Pagina opslaan</button>
         <p class="form-message" id="save-message" role="status"></p>
       </form>
     </dialog>
 
     <dialog class="modal pages-modal" id="pages-dialog" aria-labelledby="pages-title">
       <div class="modal-card">
-        <button class="modal-close" type="button" data-close="pages-dialog" aria-label="Close">×</button>
-        <p class="eyebrow">YOUR COLLECTION</p>
-        <h2 id="pages-title">Saved pages</h2>
+        <button class="modal-close" type="button" data-close="pages-dialog" aria-label="Sluiten">×</button>
+        <p class="eyebrow">JOUW VERZAMELING</p>
+        <h2 id="pages-title">Opgeslagen pagina’s</h2>
         <div class="saved-pages" id="saved-pages"></div>
         <p class="form-message" id="pages-message" role="status"></p>
       </div>
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <audio id="save-sound" src="/save-page.mp3" preload="auto"></audio>
 
     <footer>
     </footer>
